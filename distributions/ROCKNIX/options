@@ -11,28 +11,28 @@
   GIT_ORGANIZATION="hypulse"
 
 # The name of the github project for updates
-  GIT_REPO="aleph"
+  GIT_REPO="isopod"
 
 # Name of the Distro to build (full name, without special characters)
-  DISTRONAME="aleph"
+  DISTRONAME="isopod"
 
 # Name of the OS to build (full name, lower case, without special characters)
-  OSNAME="aleph"
+  OSNAME="isopod"
 
 # short project description
   DESCRIPTION="A music-first handheld OS inspired by the iPod."
 
 # Distribution Home URL
-  HOME_URL="https://github.com/hypulse/aleph"
+  HOME_URL="https://github.com/hypulse/isopod"
 
 # Documentation URL
-  WIKI_URL="https://github.com/hypulse/aleph"
+  WIKI_URL="https://github.com/hypulse/isopod"
 
 # Where to report bugs
-  BUG_REPORT_URL="https://github.com/hypulse/aleph/issues"
+  BUG_REPORT_URL="https://github.com/hypulse/isopod/issues"
 
 # Root password to integrate in the target system
-  ROOT_PASSWORD="aleph"
+  ROOT_PASSWORD="isopod"
 
 # Install glibc locales to the build (yes / no)
   GLIBC_LOCALES="yes"
@@ -199,7 +199,7 @@
   GET_HANDLER_SUPPORT="${GET_HANDLER_SUPPORT:-archive git file}"
 
 # Partition labels for USB/SD installation media
-  DISTRO_BOOTLABEL="ALEPH"
+  DISTRO_BOOTLABEL="ISOPOD"
   DISTRO_DISKLABEL="STORAGE"
 
 # Settings package name - blank if not required

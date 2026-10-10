@@ -1,0 +1,258 @@
+name: isoPod H700 image
+
+on:
+  push:
+    branches: [isopod]
+    paths-ignore: ["**.md", "isopod/docs/**", "isopod/tools/**"]
+  workflow_dispatch:
+    inputs:
+      fresh:
+        description: Build everything again instead of starting from the kept build
+        type: boolean
+        default: false
+
+concurrency:
+  group: isopod-h700-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PROJECT: ROCKNIX
+  DEVICE: H700
+  ARCH: aarch64
+  EMULATION_DEVICE: "no"
+  ENABLE_32BIT: "no"
+  MODULES_PKG: "no"
+  JAVA_HOME: /usr
+  AUTOREMOVE: "yes"
+  DISABLE_COLORS: "yes"
+  CCACHE_COMPILERCHECK: content
+  CCACHE_COMPRESS: 1
+  CCACHE_COMPRESSLEVEL: 6
+  CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
+  CCACHE_MAXSIZE: 2G
+  BUILDER: ghcr.io/rocknix/rocknix-build:latest
+  ISOPOD_BUILD: build.isopod-H700.aarch64
+
+jobs:
+  # isoPod's own sources reach the image through three leaf packages and nothing else reads
+  # them. While the rest of the tree is what it was, the build directory of the last full
+  # build is still right for it: the image job starts from that one and the stamps leave
+  # only those packages to build. Any other change takes the full build below.
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      base: ${{ steps.base.outputs.key }}
+      kept: ${{ steps.kept.outputs.cache-matched-key != '' && !inputs.fresh }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Name the base
+        id: base
+        run: |
+          set -o pipefail
+          os=$(docker buildx imagetools inspect "${BUILDER}" \
+            --format '{{index .Image.Config.Labels "org.opencontainers.image.version"}}') || os=unknown
+          base=$({
+            echo "${os} ${PROJECT} ${DEVICE} ${ARCH} ${EMULATION_DEVICE} ${ENABLE_32BIT} ${MODULES_PKG}"
+            git -c core.quotePath=false ls-tree -r HEAD | awk -F'\t' \
+              '$2 !~ /^(isopod|projects\/ROCKNIX\/packages\/isopod\/(isopod|isopodd|isopod-shell)|\.github)\// && $2 !~ /\.md$/'
+          } | sha256sum | cut -c1-16)
+          echo "key=build-v1-${base}" >> "${GITHUB_OUTPUT}"
+
+      - name: Look for a kept build of this base
+        id: kept
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.ISOPOD_BUILD }}
+          key: ${{ steps.base.outputs.key }}-
+          restore-keys: ${{ steps.base.outputs.key }}-
+          lookup-only: true
+
+  toolchain:
+    needs: plan
+    if: needs.plan.outputs.kept != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    env:
+      AUTOREMOVE_BLOCK: "gcc glibc libtool flex"
+    steps:
+      - name: Maximize build space
+        uses: justinthelaw/maximize-github-runner-space@v0.9.0
+        with:
+          skip-components: docker-engine
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.ISOPOD_BUILD }}/.ccache
+          key: ccache-toolchain-${{ github.sha }}
+          restore-keys: ccache-toolchain-
+
+      - name: Build toolchain
+        run: |
+          ./scripts/get_env > .env
+          for attempt in 1 2 3; do
+            docker run --init --env-file .env --rm --user $(id -u):$(id -g) -v ${PWD}:${PWD} -w ${PWD} \
+              "${BUILDER}" bash -c "./scripts/build_mt toolchain alsa-lib llvm:host" > output.log 2>&1 && exit 0
+            tail -n 40 output.log
+          done
+          exit 1
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs-toolchain
+          path: |
+            output.log
+            ${{ env.ISOPOD_BUILD }}/.threads/logs/
+
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.ISOPOD_BUILD }}/.ccache
+          key: ccache-toolchain-${{ github.sha }}
+
+      - name: Pack build directory
+        run: |
+          rm -rf ${ISOPOD_BUILD}/.ccache
+          sudo tar --zstd --remove-files -cf toolchain.tar.zst ${ISOPOD_BUILD}
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: toolchain
+          path: toolchain.tar.zst
+          retention-days: 3
+          compression-level: 0
+
+  image:
+    needs: [plan, toolchain]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.toolchain.result == 'success' || needs.toolchain.result == 'skipped') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    env:
+      KEPT: ${{ needs.plan.outputs.kept }}
+    steps:
+      - name: Maximize build space
+        if: env.KEPT != 'true'
+        uses: justinthelaw/maximize-github-runner-space@v0.9.0
+        with:
+          skip-components: docker-engine
+
+      # A kept build takes some ten gigabytes all told, which most runners have free as they come.
+      - name: Make room
+        if: env.KEPT == 'true'
+        run: |
+          df -h /
+          if [ "$(df --output=avail -BG / | tail -n 1 | tr -dc 0-9)" -lt 20 ]; then
+            sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          fi
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v8
+        if: env.KEPT != 'true'
+        with:
+          name: toolchain
+
+      - name: Unpack build directory
+        if: env.KEPT != 'true'
+        run: |
+          tar --zstd -xf toolchain.tar.zst
+          rm toolchain.tar.zst
+
+      - name: Restore the kept build
+        if: env.KEPT == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.ISOPOD_BUILD }}
+          key: ${{ needs.plan.outputs.base }}-
+          restore-keys: ${{ needs.plan.outputs.base }}-
+          fail-on-cache-miss: true
+
+      # A cache nobody reads for a week is dropped, and the next full build would start cold.
+      - name: Keep the toolchain's ccache alive
+        if: env.KEPT == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.ISOPOD_BUILD }}/.ccache
+          key: ccache-toolchain-${{ github.sha }}
+          restore-keys: ccache-toolchain-
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.ISOPOD_BUILD }}/.ccache
+          key: ccache-image-${{ github.sha }}
+          restore-keys: ccache-image-
+
+      - name: Build image
+        run: |
+          ./scripts/get_env > .env
+          for attempt in 1 2 3; do
+            docker run --init --env-file .env --rm --user $(id -u):$(id -g) -v ${PWD}:${PWD} -w ${PWD} \
+              "${BUILDER}" bash -c "./scripts/build_distro" > output.log 2>&1 && exit 0
+            tail -n 60 output.log
+          done
+          exit 1
+
+      - name: Check that the image carries this commit's isoPod
+        run: diff -r -x __pycache__ -x '*.pyc' isopod/daemon/isopod ${ISOPOD_BUILD}/image/system/usr/lib/isopod/isopod
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: logs-image
+          path: |
+            output.log
+            ${{ env.ISOPOD_BUILD }}/.threads/logs/
+
+      - name: Say what a failed build stood on
+        if: failure() && env.KEPT == 'true'
+        run: echo "This build started from the kept build ${{ needs.plan.outputs.base }}. Run the workflow by hand with 'fresh' to build everything again." >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Save ccache
+        if: always() && env.KEPT != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.ISOPOD_BUILD }}/.ccache
+          key: ccache-image-${{ github.sha }}
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: isopod-H700-images
+          path: |
+            target/isopod-*.img.gz
+            target/isopod-*.img.gz.sha256
+          compression-level: 0
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: isopod-H700-update
+          path: |
+            target/isopod-*.tar
+            target/isopod-*.tar.sha256
+          compression-level: 0
+
+      - name: Leave what the next build needs
+        if: env.KEPT != 'true'
+        run: |
+          rm -rf ${ISOPOD_BUILD}/image ${ISOPOD_BUILD}/.threads ${ISOPOD_BUILD}/.ccache
+          du -sh ${ISOPOD_BUILD}/* ${ISOPOD_BUILD}/.[!.]* | sort -h | tail -n 12
+          du -sh ${ISOPOD_BUILD}
+
+      - name: Keep this build for the next one on the same base
+        if: env.KEPT != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.ISOPOD_BUILD }}
+          key: ${{ needs.plan.outputs.base }}-${{ github.run_id }}-${{ github.run_attempt }}

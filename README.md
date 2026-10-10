@@ -1,7 +1,7 @@
-# aleph
+# isoPod
 
-**aleph** is a music-first operating system for the Anbernic RG35XX SP, built on ROCKNIX.
-See [aleph/README.md](aleph/README.md) for what it does, the button rules and how to install it.
+**isoPod** is a music-first operating system for the Anbernic RG35XX SP, built on ROCKNIX.
+See [isopod/README.md](isopod/README.md) for what it does, the button rules and how to install it.
 The rest of this page is ROCKNIX's README, kept for its build and contribution notes.
 
 ---

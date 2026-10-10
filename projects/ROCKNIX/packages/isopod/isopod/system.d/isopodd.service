@@ -1,0 +1,14 @@
+[Unit]
+Description=isoPod system daemon
+After=dbus.service bluetooth.service NetworkManager.service pipewire-pulse.service mpd.service
+Wants=mpd.service
+
+[Service]
+Environment=HOME=/storage
+ExecStart=/bin/bash -c '. /etc/profile && exec /usr/bin/isopodd'
+Restart=always
+OOMScoreAdjust=-900
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

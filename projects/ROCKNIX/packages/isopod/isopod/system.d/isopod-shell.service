@@ -1,0 +1,13 @@
+[Unit]
+Description=isoPod shell
+Requires=sway.service
+PartOf=sway.service
+After=sway.service isopodd.service
+
+[Service]
+Environment=HOME=/storage
+ExecStartPre=/bin/sh -c 'for i in $(seq 100); do [ -S /var/run/0-runtime-dir/wayland-1 ] && exit 0; sleep 0.1; done; exit 1'
+ExecStart=/bin/bash -c '. /etc/profile && exec /usr/bin/isopod-shell'
+Restart=always
+OOMScoreAdjust=-900
+RestartSec=1

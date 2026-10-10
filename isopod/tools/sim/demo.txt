@@ -1,0 +1,339 @@
+# The whole system on camera: run with ISOPOD_RECORD=/out/isopod-demo.mp4 to record it.
+wait 1500
+caption isoPod · RG35XX SP를 위한 음악 중심 OS
+wait 3500
+caption 홈 · 왼쪽은 목록, 오른쪽은 앨범 아트가 천천히 흐르는 패널
+wait 4000
+shot d01-home.png
+caption 항목마다 오른쪽 패널이 바뀌어요 · A 열기, B 뒤로
+key down
+wait 1200
+key down
+wait 1200
+key down
+wait 1200
+key down
+wait 1200
+key down
+wait 1200
+hold up 5
+wait 1500
+
+caption 음악 › 커버 플로우 · 앨범 커버를 넘겨 보세요
+key confirm
+wait 1500
+key confirm
+wait 2200
+key right
+wait 900
+key right
+wait 900
+key right
+wait 900
+key right
+wait 1200
+key left
+wait 1500
+shot d02-coverflow.png
+caption A · 앨범을 뒤집으면 수록곡이 나와요
+key confirm
+wait 2500
+shot d02b-flip.png
+key down
+wait 700
+caption 노래를 고르면 바로 ‘지금 재생 중’으로
+key confirm
+wait 3000
+shot d03-nowplaying.png
+caption ↑/↓ 볼륨 · ←/→ 10초 이동 · 클릭 휠처럼
+key up
+wait 700
+key up
+wait 1500
+key right
+wait 700
+key right
+wait 1800
+caption L1/R1 이전·다음 곡 · Start 재생/일시정지
+key next
+wait 2000
+key play
+wait 1500
+key play
+wait 1800
+
+caption X · 옵션: 셔플, 반복, 다음 재생, 앨범, 잠자기 타이머
+key more
+wait 2200
+key confirm
+wait 1500
+key more
+wait 900
+hold down 4
+wait 700
+key confirm
+wait 1500
+shot d04-timer.png
+key down
+wait 500
+key confirm
+wait 2500
+
+caption Home · 어디서든 홈으로, 음악은 계속 재생돼요
+daemon home
+wait 2500
+caption Select · 제어 센터
+key control
+wait 3000
+shot d05-control.png
+key control
+wait 1000
+
+caption 설정 › 블루투스 · 헤드폰은 한 번 눌러 연결
+hold up 8
+hold down 5
+wait 600
+key confirm
+wait 900
+key down
+wait 500
+key confirm
+wait 2000
+shot d06-bluetooth.png
+key down
+wait 500
+key confirm
+wait 3000
+shot d07-bt-connected.png
+caption 헤드폰이 끊기면 스피커로 새지 않고 멈춰요
+key confirm
+wait 3500
+shot d08-bt-dropped.png
+key confirm
+wait 2500
+key back
+wait 800
+
+caption Wi-Fi · 여러 네트워크를 기억하고 비밀번호는 한 번만
+key up
+wait 500
+key confirm
+wait 2000
+key down
+wait 500
+key down
+wait 500
+key confirm
+wait 1500
+type password
+wait 1500
+shot d09-password.png
+key play
+wait 3500
+shot d10-wifi-joined.png
+key back
+wait 800
+
+caption 음악 검색 · 두벌식 한글 자판, 초성만으로도 찾아요
+daemon home
+wait 800
+hold up 8
+key confirm
+wait 900
+hold down 7
+wait 500
+key confirm
+wait 1000
+key down
+key down
+key down
+key right
+wait 500
+key confirm
+wait 800
+type ㅎㄱ
+wait 2000
+shot d11-hangul.png
+key play
+wait 3000
+shot d12-search.png
+
+caption 라디오 · 전 세계 방송, 즐겨찾기, 한국
+daemon home
+wait 800
+hold up 8
+key down
+wait 500
+key confirm
+wait 1500
+key down
+wait 500
+key confirm
+wait 4500
+shot d13-radio.png
+caption 방송을 고르면 바로 ‘연결 중…’, 이어서 라이브
+key confirm
+wait 1200
+shot d14-connecting.png
+wait 6000
+shot d15-live.png
+key more
+wait 1500
+key confirm
+wait 2500
+
+caption 책 · books 폴더의 전자책을 KOReader로 열어요
+daemon home
+wait 800
+hold up 8
+hold down 3
+wait 500
+key confirm
+wait 2000
+shot d16-books.png
+key down
+wait 400
+key down
+wait 400
+key confirm
+wait 2000
+caption 멀티태스킹 · Home을 누르면 앱은 그 자리에서 멈춰 기다려요
+daemon home
+wait 1500
+hold down 12
+wait 2000
+shot d17-open-apps.png
+caption 게임 · PortMaster와 설치한 포트 (게임을 열면 음악은 멈춰요)
+hold up 12
+hold down 4
+wait 500
+key confirm
+wait 2000
+shot d18-games.png
+hold down 2
+wait 500
+key confirm
+wait 1500
+daemon home
+wait 1200
+caption 열린 앱은 홈에서 골라 이어 가고, X로 닫아요 (앱이 3개를 넘으면 오래된 것부터 닫혀요)
+hold down 12
+wait 1500
+shot d19-apps-list.png
+key more
+wait 1500
+key confirm
+wait 2000
+shot d20-closed.png
+
+caption 설정 › 최대 음량 · 헤드폰 볼륨의 상한
+hold up 12
+hold down 5
+wait 500
+key confirm
+wait 900
+hold down 3
+wait 500
+key confirm
+wait 900
+hold down 2
+wait 500
+key confirm
+wait 1500
+shot d21-limit.png
+caption 설정 › 화면 · 밝기, 화면 끄기, 뚜껑을 닫을 때
+key up
+wait 500
+key confirm
+wait 900
+key confirm
+wait 800
+hold right 3
+wait 1500
+key back
+wait 600
+key down
+wait 400
+key confirm
+wait 2000
+shot d22-timeout.png
+key back
+wait 500
+key down
+wait 400
+key confirm
+wait 2000
+shot d23-lid.png
+key back
+wait 500
+key back
+wait 600
+caption Wi-Fi로 파일 넣기 · 브라우저에 끌어다 놓으면 종류별로 들어가요
+hold down 3
+wait 500
+key confirm
+wait 3500
+shot d24-transfer.png
+key back
+wait 600
+caption 정보 · 부팅 시간, 용량, 버전
+key down
+wait 400
+key confirm
+wait 3000
+shot d25-about.png
+key back
+wait 600
+caption 언어 · English
+hold up 2
+wait 400
+key confirm
+wait 800
+key down
+wait 400
+key confirm
+wait 2500
+shot d26-english.png
+key confirm
+wait 800
+key up
+wait 400
+key confirm
+wait 2000
+
+caption 전원 버튼 · 화면 끄기와 켜기
+daemon home
+wait 1200
+key play
+wait 800
+daemon power
+wait 2000
+daemon power
+wait 2000
+caption 뚜껑을 닫아도 음악이 재생 중이면 화면만 꺼져요
+sim {"lid": true}
+wait 3000
+sim {"lid": false}
+wait 2000
+caption 재생이 멈춰 있으면 뚜껑을 닫는 순간 잠자기
+key play
+wait 800
+sim {"lid": true}
+wait 2500
+sim {"lid": false}
+wait 2000
+caption 전원 버튼을 길게 · 잠자기, 재시동, 전원 끄기
+sim {"power": true}
+wait 1600
+sim {"power": false}
+wait 2500
+shot d27-power-menu.png
+key back
+wait 800
+caption 배터리 20% · 10% · 5%에서 한 번씩 알려줘요
+sim {"battery": 19}
+wait 3500
+sim {"battery": 78}
+wait 800
+caption isoPod · github.com/hypulse/isopod
+wait 3500
