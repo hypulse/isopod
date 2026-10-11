@@ -111,6 +111,7 @@ class Music:
         song = current[0] if current else {}
         playing = status.get("state", "stop")
         elapsed = _float(status.get("elapsed"))
+        shown = self._position()
         self._elapsed = (elapsed, time.monotonic())
         uri = song.get("file", "")
         if uri != self.state.get("player").get("file"):
@@ -126,6 +127,12 @@ class Music:
             shuffle=status.get("random") == "1", repeat=status.get("repeat") == "1",
             single=status.get("single") == "1", title=s["title"], artist=s["artist"], album=s["album"],
             art=art)
+        if abs(shown - elapsed) > 1:
+            self.state.resend()
+
+    def _position(self):
+        base, at = self._elapsed
+        return base + (time.monotonic() - at if self.state.get("player")["state"] == "play" else 0)
 
     def _live_elapsed(self, snap):
         player = snap["player"]
@@ -318,10 +325,7 @@ class Music:
         await self.mpd.call("next")
 
     async def previous(self):
-        player = self.state.get("player")
-        base, at = self._elapsed
-        elapsed = base + (time.monotonic() - at if player["state"] == "play" else 0)
-        if elapsed > 3 or player["pos"] <= 1:
+        if self._position() > 3 or self.state.get("player")["pos"] <= 1:
             await self.mpd.call("seekcur", "0")
         else:
             await self.mpd.call("previous")

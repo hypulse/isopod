@@ -131,6 +131,9 @@ static void handle(SDL_Event *ev)
         app.dirty = true;
     } else if (ev->type == SDL_KEYDOWN) {
         keyboard(&ev->key);
+    } else if (ev->type == SDL_KEYUP) {
+        SDL_Keycode sym = ev->key.keysym.sym;
+        nav_key_up(sym == SDLK_LEFT ? "left" : sym == SDLK_RIGHT ? "right" : "");
     } else if (ev->type == ipc_event_type()) {
         ipc_dispatch(ev);
     }
@@ -203,6 +206,7 @@ static void script_step(void)
         daemon_activity();
     if (!strcmp(cmd, "key")) {
         nav_key(arg, false);
+        nav_key_up(arg);
     } else if (!strcmp(cmd, "hold")) {
         char key[32];
         int n = 1;
@@ -210,6 +214,7 @@ static void script_step(void)
         nav_key(key, false);
         for (int i = 1; i < n; i++)
             nav_key(key, true);
+        nav_key_up(key);
     } else if (!strcmp(cmd, "daemon")) {
         daemon_key(arg);
         settle = false;

@@ -72,12 +72,13 @@ Every screen is a list, and every list works the same way.
 | Volume | Volume, always |
 | Power | Turn the screen off or on; hold for Sleep, Restart and Shut Down |
 
-In Now Playing, ← and → skip 10 seconds, ↑ and ↓ change the volume, and Y shows the lyrics.
+In Now Playing, ← and → are the previous and the next song, and held they wind through the
+song, as on an iPod; ← starts a song again once it is three seconds in. Y shows the lyrics.
 
 The on-screen keyboard goes around its edges the way lists do.
 
-A video follows Now Playing: A or Start pauses, B leaves and remembers the spot, ← and →
-skip 10 seconds and keep skipping while held, ↑ and ↓ change the volume. X switches the
+In a video A or Start pauses, B leaves and remembers the spot, ← and → skip 10 seconds
+and keep skipping while held, ↑ and ↓ change the volume. X switches the
 audio track, Y the subtitles (as Y is the lyrics of a song), and Select shows where the
 film is. A headset's buttons act on the video while it is in front and on the music
 otherwise, and a paused video lets the screen go dark like any list.

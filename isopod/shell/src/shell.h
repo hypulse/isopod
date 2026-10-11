@@ -222,6 +222,7 @@ void nav_home(void);
 void nav_reload(Page *p);
 void nav_reload_path(const char *path);
 void nav_key(const char *key, bool repeat);
+void nav_key_up(const char *key);
 void nav_apply(cJSON *action, const char *title_hint);
 void page_free(Page *p);
 void status_update(cJSON *state);

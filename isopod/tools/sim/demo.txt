@@ -41,13 +41,9 @@ caption 노래를 고르면 바로 ‘지금 재생 중’으로
 key confirm
 wait 3000
 shot d03-nowplaying.png
-caption ↑/↓ 볼륨 · ←/→ 10초 이동 · 클릭 휠처럼
-key up
-wait 700
-key up
+caption ←/→ 이전 곡·다음 곡 · 길게 누르면 감기, 클릭 휠처럼
+hold right 12
 wait 1500
-key right
-wait 700
 key right
 wait 1800
 caption Start · 재생/일시정지

@@ -34,6 +34,10 @@ class State:
         current.update(fields)
         self._schedule()
 
+    def resend(self):
+        """For a clock that was set back to where it last started, which changes no field."""
+        self._schedule()
+
     def replace(self, section, value):
         if self.data[section] == value:
             return

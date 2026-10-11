@@ -565,14 +565,6 @@ static void player(const char *cmd, int value)
     ipc_request(req, NULL, NULL);
 }
 
-static void volume(int delta)
-{
-    cJSON *req = cJSON_CreateObject();
-    cJSON_AddStringToObject(req, "op", "volume");
-    cJSON_AddNumberToObject(req, "delta", delta);
-    ipc_request(req, NULL, NULL);
-}
-
 /* A press at either end of a list goes around to the other; a held button stops there. */
 static void move_sel(Page *p, int delta, bool repeat)
 {
@@ -723,18 +715,19 @@ static void coverflow_key(Page *p, const char *key, bool repeat)
     }
 }
 
+/* Left and right as on the iPod: let go at once they are the previous and the next song,
+ * held they wind through this one. Which it was is known when the button comes up. */
+static int np_skip;
+
 static void nowplaying_key(const char *key, bool repeat)
 {
+    int dir = !strcmp(key, "left") ? -1 : !strcmp(key, "right") ? 1 : 0;
     if (!strcmp(key, "confirm") && !repeat)
         player("toggle", 0);
-    else if (!strcmp(key, "left"))
-        player("seek", -10);
-    else if (!strcmp(key, "right"))
-        player("seek", 10);
-    else if (!strcmp(key, "up"))
-        volume(1);
-    else if (!strcmp(key, "down"))
-        volume(-1);
+    else if (dir && repeat)
+        player("seek", dir * 3);
+    else if (dir)
+        np_skip = dir;
     else if (!strcmp(key, "more") && !repeat)
         request_do("alt", "/nowplaying", NULL, NULL);
     else if (!strcmp(key, "back") && !repeat)
@@ -852,8 +845,19 @@ static void keyboard_key(const char *key, bool repeat)
         k->col = n - 1;
 }
 
+void nav_key_up(const char *key)
+{
+    int dir = !strcmp(key, "left") ? -1 : !strcmp(key, "right") ? 1 : 0;
+    if (!dir)
+        return;
+    if (dir == np_skip)
+        player(dir < 0 ? "prev" : "next", 0);
+    np_skip = 0;
+}
+
 void nav_key(const char *key, bool repeat)
 {
+    np_skip = 0;
     if (!strcmp(key, "home")) {
         nav_home();
         app.dirty = true;
@@ -1057,8 +1061,12 @@ void on_ipc_event(cJSON *msg)
         SDL_free(kind);
     } else if (!strcmp(ev, "key")) {
         char *key = json_str(msg, "key");
-        if (key && app.focused && SDL_TICKS_PASSED(SDL_GetTicks(), app.wake_guard))
-            nav_key(key, json_bool(msg, "repeat"));
+        if (key && app.focused && SDL_TICKS_PASSED(SDL_GetTicks(), app.wake_guard)) {
+            if (json_bool(msg, "up"))
+                nav_key_up(key);
+            else
+                nav_key(key, json_bool(msg, "repeat"));
+        }
         SDL_free(key);
     } else if (!strcmp(ev, "page")) {
         cJSON *path;

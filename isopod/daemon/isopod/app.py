@@ -206,12 +206,17 @@ class App:
             self.server.broadcast({"event": "key", "key": "home"})
             return
         if self.apps.front:
-            # A video has the gamepad to itself, but up and down are the volume there as
-            # they are in Now Playing, and the volume is isoPod's.
+            # A video has the gamepad to itself, but up and down are the volume there, and
+            # the volume is isoPod's.
             if name in ("up", "down") and self.apps.front_plays_media:
                 await self.volume(1 if name == "up" else -1)
             return
         self.server.broadcast({"event": "key", "key": name, "repeat": repeat})
+
+    def key_up(self, name):
+        """Now Playing tells a tap of left or right from a hold by when the button comes up."""
+        if not (self.power.lid_closed or self.apps.front):
+            self.server.broadcast({"event": "key", "key": name, "up": True})
 
     async def volume(self, delta):
         self.power.activity()

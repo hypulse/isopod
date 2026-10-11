@@ -132,7 +132,9 @@ class Input:
         if code in BUTTONS:
             name = BUTTONS[code]
             self._stop_repeat(name)
-            if pressed:
+            if not pressed:
+                self.router.key_up(name)
+            else:
                 spawn(self.router.key(name, False))
                 if name in REPEATING:
                     self._repeats[name] = spawn(self._repeat(name, lambda n=name: self.router.key(n, True)))

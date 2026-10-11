@@ -223,6 +223,21 @@ class NowPlayingTest(unittest.IsolatedAsyncioTestCase):
     async def test_words_without_times_stay_on_their_own_screen(self):
         self.assertEqual(await self.now_playing("plain.mp3"), ("MP3", [], None))
 
+    async def test_a_song_started_again_twice_sets_the_clock_twice(self):
+        class Mpd:
+            async def call(self, name, *args):
+                return {"status": [("state", "play"), ("elapsed", "0.000"), ("song", "0")],
+                        "currentsong": [("file", "a.mp3"), ("Title", "A")]}[name]
+
+        sent = []
+        music = Music(Mpd(), State(sent.append), tempfile.mkdtemp())
+        music._no_art.add("a.mp3")
+        for _ in range(2):
+            await music.refresh()
+            await asyncio.sleep(0.1)
+            music._elapsed = (0.0, time.monotonic() - 2)
+        self.assertEqual(len(sent), 2, "the shell's clock had run on two seconds")
+
 
 class CoverArtTest(unittest.IsolatedAsyncioTestCase):
     async def test_songs_sharing_a_folder_keep_their_own_album_covers(self):
