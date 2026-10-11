@@ -39,6 +39,9 @@ for KIND in music videos; do
   fi
 done
 
+# A Mac leaves a "._name" beside each file it copies to a card; those are not songs.
+[ -e /storage/music/.mpdignore ] || echo '._*' >/storage/music/.mpdignore
+
 # ROCKNIX's 099-networkservices starts sshd and then, moving on to fstrim, which names no
 # condition file of its own, takes sshd's away again, so the unit is skipped at every boot.
 . /etc/profile.d/001-functions

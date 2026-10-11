@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from isopod.app import App  # noqa: E402
 from isopod.audio import Audio, FakeAudio, _sink  # noqa: E402
+from isopod import uevents  # noqa: E402
 from isopod.battery import Battery  # noqa: E402
 from isopod.bluetooth import A2DP_SINK, Backend, Bluetooth, Device, RavelBackend  # noqa: E402
 from isopod.mpd import MPD, filter_expr, quote, records, values  # noqa: E402
@@ -1096,6 +1097,14 @@ class BluetoothTest(unittest.IsolatedAsyncioTestCase):
                                                 ("trust", PAD), ("connect", PAD, None)])
         await asyncio.sleep(0.01)
         self.assertEqual(self.bluez.calls[5:], [("discover", True)], "it looks again once that is done")
+
+
+class HotplugTest(unittest.TestCase):
+    def test_a_kernel_message_becomes_its_fields(self):
+        raw = (b"add@/devices/virtual/input/input7/event5\0ACTION=add\0SUBSYSTEM=input\0"
+               b"MAJOR=13\0MINOR=69\0DEVNAME=input/event5\0SEQNUM=2903\0")
+        self.assertEqual(uevents.parse(raw), {"ACTION": "add", "SUBSYSTEM": "input", "MAJOR": "13",
+                                              "MINOR": "69", "DEVNAME": "input/event5", "SEQNUM": "2903"})
 
 
 class BluezSignalsTest(unittest.TestCase):

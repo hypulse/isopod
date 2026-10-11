@@ -3,6 +3,7 @@ import glob
 import logging
 import os
 
+from . import uevents
 from .util import spawn
 
 log = logging.getLogger("isopod.battery")
@@ -36,20 +37,8 @@ class Battery:
             self.state.update("battery", percent=78, charging=False)
             return
         self.refresh()
-        try:
-            import pyudev
-            monitor = pyudev.Monitor.from_netlink(pyudev.Context())
-            monitor.filter_by("power_supply")
-            monitor.start()
-            asyncio.get_running_loop().add_reader(monitor.fileno(), self._uevent, monitor)
-        except ImportError:
-            pass
+        uevents.watch("power_supply", lambda event: self.refresh())
         spawn(self._poll())
-
-    def _uevent(self, monitor):
-        while monitor.poll(timeout=0) is not None:
-            pass
-        self.refresh()
 
     async def _poll(self):
         while True:

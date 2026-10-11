@@ -61,16 +61,15 @@ class App:
 
     async def run(self):
         await self.server.start()
+        self.music.on_library_change(lambda: self.page_changed("/music", "/"))
         for name, service in (("music", self.music), ("bluetooth", self.bluetooth),
                               ("wifi", self.wifi), ("audio", self.audio), ("power", self.power),
-                              ("battery", self.battery), ("apps", self.apps)):
+                              ("battery", self.battery), ("apps", self.apps), ("input", self.input)):
             try:
-                await service.start()
+                if service:
+                    await service.start()
             except Exception:
                 log.exception("%s failed to start", name)
-        self.music.on_library_change(lambda: self.page_changed("/music", "/"))
-        if self.input:
-            await self.input.start()
         if await self.music.wait_ready():
             spawn(self._rescan_later())
         log.info("isoPod %s ready", __version__)

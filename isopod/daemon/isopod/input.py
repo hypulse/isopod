@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 
-from . import evdev
+from . import evdev, uevents
 from .util import spawn
 
 log = logging.getLogger("isopod.input")
@@ -70,25 +70,16 @@ class Input:
 
     async def start(self):
         self.scan()
-        try:
-            import pyudev
-        except ImportError:
-            log.info("pyudev missing; input hotplug disabled")
-            return
-        monitor = pyudev.Monitor.from_netlink(pyudev.Context())
-        monitor.filter_by("input")
-        monitor.start()
-        asyncio.get_running_loop().add_reader(monitor.fileno(), self._udev, monitor)
+        uevents.watch("input", self._hotplug)
 
-    def _udev(self, monitor):
-        while (device := monitor.poll(timeout=0)) is not None:
-            node = device.device_node or ""
-            if not node.startswith("/dev/input/event"):
-                continue
-            if device.action == "remove":
-                self._drop(node)
-            elif device.action == "add":
-                asyncio.get_running_loop().call_later(0.3, self.scan)
+    def _hotplug(self, event):
+        node = "/dev/" + event.get("DEVNAME", "")
+        if not node.startswith("/dev/input/event"):
+            return
+        if event.get("ACTION") == "remove":
+            self._drop(node)
+        elif event.get("ACTION") == "add":
+            asyncio.get_running_loop().call_later(0.3, self.scan)
 
     def scan(self):
         for node in evdev.event_nodes():
