@@ -45,6 +45,7 @@ class Song(dict):
             albumartist=rec.get("albumartist") or artist,
             album=rec.get("album") or "",
             genre=rec.get("genre") or "",
+            year=(rec.get("date") or "")[:4],
             track=_int(rec.get("track")),
             disc=_int(rec.get("disc")),
             duration=_float(rec.get("duration") or rec.get("time")),
@@ -173,6 +174,13 @@ class Music:
     def artists(self):
         names = {s["albumartist"] for s in self.songs}
         return sorted(names, key=sort_key)
+
+    def details(self):
+        """A line about the song playing: its year, its genre and the kind of file it is."""
+        uri = self.state.get("player").get("file") or ""
+        song = self._by_file.get(uri) or {}
+        kind = os.path.splitext(uri)[1][1:].upper()
+        return " · ".join(part for part in (song.get("year"), song.get("genre"), kind) if part)
 
     def _lyric_files(self, uri):
         """The .lrc, then the .txt, named like the song. Names are compared the way they

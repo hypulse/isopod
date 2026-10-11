@@ -377,7 +377,12 @@ class Pages:
                         [item(f"l{i}", line, "none") for i, line in enumerate(lines)],
                         style="lyrics", times=times, live=True,
                         empty=empty("music", self.t("no_lyrics")))
-        return {"path": path, "title": self.t("now_playing"), "style": "nowplaying", "items": []}
+        # Beside the cover: a line about the song, and its words where they follow the song.
+        found = await self.app.music.lyrics()
+        lines, times = found if found and found[1] else ([], None)
+        return {"path": path, "title": self.t("now_playing"), "style": "nowplaying", "live": True,
+                "items": [item(f"l{i}", line, "none") for i, line in enumerate(lines)], "times": times,
+                "note": self.app.music.details()}
 
     async def now_playing_options(self):
         t = self.t

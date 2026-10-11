@@ -237,13 +237,57 @@ static void draw_progress_row(Player *pl, int y)
     }
 }
 
-static void draw_nowplaying(int x)
+/* Copies a string the daemon sent, with value where it names a slot such as {time}. */
+static void fill_slot(char *out, size_t n, const char *words, const char *slot, const char *value)
+{
+    const char *at = strstr(words, slot);
+    if (at)
+        snprintf(out, n, "%.*s%s%s", (int)(at - words), words, value, at + strlen(slot));
+    else
+        snprintf(out, n, "%s", words);
+}
+
+/* The line being sung: the last one whose time has come, -1 before the first. */
+static int lyric_now(Page *p, double elapsed)
+{
+    int cur = -1;
+    for (int i = 0; i < p->count && i < p->time_count; i++)
+        if (p->times[i] <= elapsed + 0.25)
+            cur = i;
+    return cur;
+}
+
+/* Under a cover that has the room, its reflection, fading out the way it did on the iPod. */
+static void draw_reflection(const char *path, int x, int y, int size, int depth)
+{
+    SDL_Texture *t = image_or(path, "art-default", size, 0);
+    if (!t)
+        return;
+    SDL_FPoint top[2] = {{(float)x, (float)y}, {(float)(x + size), (float)y}};
+    SDL_FPoint bottom[2] = {{(float)x, (float)(y + depth)}, {(float)(x + size), (float)(y + depth)}};
+    float u[2] = {0, 1};
+    draw_strips(t, top, bottom, u, 2, 1, 1 - depth / (float)size, (SDL_Color){255, 255, 255, 72},
+                (SDL_Color){255, 255, 255, 0});
+}
+
+/* Now Playing: where the song is in the queue, the cover, what the song is, and under
+ * them either the line being sung with the one after it or, when the song has no timed
+ * words, the cover's reflection. */
+static void draw_nowplaying(Page *p, int x)
 {
     Player *pl = &app.status.player;
     if (!pl->count && !strcmp(pl->state, "stop")) {
         draw_text_center(FONT_SEMIBOLD, FONT_NP_LINE, S("nothing_playing", ""), x + SCREEN_W / 2,
                          CONTENT_Y + CONTENT_H / 2 - 16, C_TEXT2, SCREEN_W - 80);
         return;
+    }
+    if (pl->pos > 0 && pl->count > 0) {
+        char pos[16], count[16], some[64], place[64];
+        snprintf(pos, sizeof(pos), "%d", pl->pos);
+        snprintf(count, sizeof(count), "%d", pl->count);
+        fill_slot(some, sizeof(some), S("of", "{pos} / {count}"), "{pos}", pos);
+        fill_slot(place, sizeof(place), some, "{count}", count);
+        draw_text(FONT_REGULAR, FONT_SMALL, place, x + 36, CONTENT_Y + 12, C_TEXT2, 240);
     }
     int ix = x + SCREEN_W - 36;
     if (pl->repeat) {
@@ -253,22 +297,50 @@ static void draw_nowplaying(int x)
     if (pl->shuffle)
         draw_icon("shuffle", ix - 24, CONTENT_Y + 14, C_ACCENT);
 
-    const int art = 272, ax = x + 36, ay = CONTENT_Y + 40;
-    for (int s = 2; s >= 1; s--)
-        fill_rect(ax - s * 3, ay - s * 3 + 8, art + s * 6, art + s * 6, RGBA(0, 0, 0, 9));
+    bool words = p->count > 0 && p->time_count > 0;
+    const int art = words ? 220 : 272, ax = x + 36, ay = CONTENT_Y + 44;
     draw_image(pl->art, "art-default", ax, ay, art, 0);
+    Rgba edge = RGBA(0, 0, 0, 26);
+    fill_rect(ax, ay, art, 1, edge);
+    fill_rect(ax, ay + art - 1, art, 1, edge);
+    fill_rect(ax, ay + 1, 1, art - 2, edge);
+    fill_rect(ax + art - 1, ay + 1, 1, art - 2, edge);
 
     int tx = ax + art + 28, tw = x + SCREEN_W - 30 - tx;
     int title_lines = text_width(FONT_BOLD, FONT_NP_TITLE, pl->title) > tw ? 2 : 1;
-    bool has_album = pl->album && *pl->album;
-    int block = title_lines * 38 + 10 + 32 + (has_album ? 32 : 0);
+    bool has_artist = pl->artist && *pl->artist, has_album = pl->album && *pl->album;
+    bool has_note = p->note && *p->note;
+    int block = title_lines * 38 + 8 + (has_artist ? 32 : 0) + (has_album ? 32 : 0) + (has_note ? 34 : 0);
     int ty = ay + art / 2 - block / 2;
-    int lines = draw_text_wrap(FONT_BOLD, FONT_NP_TITLE, pl->title, tx, ty, tw, 38, 2, C_TEXT);
-    ty += lines * 38 + 10;
-    if (pl->artist && *pl->artist)
-        draw_text_wrap(FONT_REGULAR, FONT_NP_LINE, pl->artist, tx, ty, tw, 32, 1, C_TEXT);
-    if (has_album)
-        draw_text(FONT_REGULAR, FONT_NP_LINE, pl->album, tx, ty + 32, C_TEXT2, tw);
+    ty += draw_text_wrap(FONT_BOLD, FONT_NP_TITLE, pl->title, tx, ty, tw, 38, 2, C_TEXT) * 38 + 8;
+    if (has_artist) {
+        draw_text(FONT_REGULAR, FONT_NP_LINE, pl->artist, tx, ty, C_TEXT, tw);
+        ty += 32;
+    }
+    if (has_album) {
+        draw_text(FONT_REGULAR, FONT_NP_LINE, pl->album, tx, ty, C_TEXT2, tw);
+        ty += 32;
+    }
+    if (has_note)
+        draw_text(FONT_REGULAR, FONT_SMALL, p->note, tx, ty + 6, C_TEXT3, tw);
+
+    if (words) {
+        int cur = lyric_now(p, live_elapsed(pl)), next = cur + 1;
+        while (next < p->count && !(p->items[next].title && *p->items[next].title))
+            next++;
+        const char *sung = cur >= 0 ? p->items[cur].title : NULL;
+        const char *coming = next < p->count ? p->items[next].title : NULL;
+        int cx = x + SCREEN_W / 2, w = SCREEN_W - 72, ly = ay + art + 18;
+        if (sung && *sung) {
+            int rows = draw_text_wrap_center(FONT_BOLD, 24, sung, cx, ly, w, 34, 2, C_TEXT);
+            if (rows < 2 && coming)
+                draw_text_center(FONT_SEMIBOLD, 21, coming, cx, ly + 38, C_TEXT3, w);
+        } else if (coming) {
+            draw_text_center(FONT_SEMIBOLD, 21, coming, cx, ly + 19, C_TEXT3, w);
+        }
+    } else {
+        draw_reflection(pl->art, ax, ay + art + 2, art, 52);
+    }
 
     draw_progress_row(pl, SCREEN_H - 42);
 }
@@ -302,10 +374,7 @@ static void draw_lyrics(Page *p, int x)
     int w = SCREEN_W - 2 * LY_PAD;
     double e = live_elapsed(pl);
     bool synced = p->time_count > 0;
-    int cur = -1;
-    for (int i = 0; synced && i < p->count && i < p->time_count; i++)
-        if (p->times[i] <= e + 0.25)
-            cur = i;
+    int cur = lyric_now(p, e);
     int total = 0, cur_y = 0;
     for (int i = 0; i < p->count; i++) {
         if (i == cur)
@@ -416,12 +485,7 @@ static const char *bar_title(Page *p)
     localtime_r(&now, &tm);
     char hm[16];
     snprintf(hm, sizeof(hm), "%d:%02d", tm.tm_hour % 12 ? tm.tm_hour % 12 : 12, tm.tm_min);
-    const char *words = S(tm.tm_hour < 12 ? "clock_am" : "clock_pm", "{time}");
-    const char *slot = strstr(words, "{time}");
-    if (slot)
-        snprintf(clock, sizeof(clock), "%.*s%s%s", (int)(slot - words), words, hm, slot + 6);
-    else
-        snprintf(clock, sizeof(clock), "%s", hm);
+    fill_slot(clock, sizeof(clock), S(tm.tm_hour < 12 ? "clock_am" : "clock_pm", "{time}"), "{time}", hm);
     return clock;
 }
 
@@ -713,7 +777,7 @@ static void draw_page(Page *p, int x)
     if (!p)
         return;
     if (p->style == STYLE_NOWPLAYING)
-        draw_nowplaying(x);
+        draw_nowplaying(p, x);
     else if (p->style == STYLE_SLIDER)
         draw_slider(p, x);
     else if (p->style == STYLE_COVERFLOW)
@@ -1053,6 +1117,14 @@ int next_frame_delay(void)
     if (p && p->style == STYLE_NOWPLAYING && !strcmp(app.status.player.state, "play")) {
         double e = app.status.player.elapsed + (SDL_GetTicks() - app.status.player.elapsed_at) / 1000.0;
         delay = (int)((1.0 - (e - (int)e)) * 1000) + 5;
+        /* and the line of the words changes when its time comes, not on the second */
+        for (int i = 0; i < p->count && i < p->time_count; i++) {
+            if (p->times[i] > e + 0.25) {
+                int ms = (int)((p->times[i] - 0.25 - e) * 1000) + 5;
+                delay = ms < delay ? ms : delay;
+                break;
+            }
+        }
     }
     if (app.keyboard.active)
         delay = delay < 0 || delay > 530 ? 530 - (int)(SDL_GetTicks() % 530) + 1 : delay;

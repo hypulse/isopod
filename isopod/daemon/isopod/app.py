@@ -38,7 +38,7 @@ class App:
         self.server = Server(args.socket, self._handle)
         self.system = System(sim=self.sim)
         self.music = Music(MPD(args.mpd, args.mpd_port), self.state, args.cache, music_dir=args.music)
-        self.music.song_changed = lambda: self.page_changed("/nowplaying/lyrics")
+        self.music.song_changed = lambda: self.page_changed("/nowplaying", "/nowplaying/lyrics")
         self.bluetooth = Bluetooth(FakeBackend() if self.sim else RavelBackend(),
                                    self.state, self.settings, self.t, self, self.system)
         self.wifi = Wifi(FakeWifi() if self.sim else Nmcli(), self.state, self.t, self)

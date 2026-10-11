@@ -58,6 +58,7 @@ void page_free(Page *p)
     SDL_free(p->empty_title);
     SDL_free(p->empty_text);
     SDL_free(p->empty_icon);
+    SDL_free(p->note);
     SDL_free(p);
 }
 
@@ -209,6 +210,8 @@ static void page_fill(Page *p, cJSON *pg)
     xfree(&p->empty_title);
     xfree(&p->empty_text);
     xfree(&p->empty_icon);
+    xfree(&p->note);
+    p->note = json_str(pg, "note");
     cJSON *empty = cJSON_GetObjectItemCaseSensitive(pg, "empty");
     if (empty) {
         p->empty_title = json_str(empty, "title");
@@ -331,13 +334,13 @@ void nav_push(const char *path, const char *title)
     }
     Page *p = page_new(path, title);
     if (!strcmp(path, "/nowplaying")) {
+        /* The player's state draws it at once; the song's details and words follow. */
         p->style = STYLE_NOWPLAYING;
         p->loaded = true;
         SDL_free(p->title);
         p->title = xstrdup(S("now_playing", "Now Playing"));
-    } else {
-        page_request(p);
     }
+    page_request(p);
     app.stack[app.depth++] = p;
     begin_transition(1, prev);
     app.dirty = true;
@@ -390,7 +393,7 @@ void nav_home(void)
 
 void nav_reload(Page *p)
 {
-    if (p && p->style != STYLE_NOWPLAYING)
+    if (p)
         page_request(p);
 }
 
@@ -929,7 +932,19 @@ void status_update(cJSON *state)
         set_str(&p->artist, pl, "artist");
         set_str(&p->album, pl, "album");
         set_str(&p->art, pl, "art");
+        char *was = p->file ? xstrdup(p->file) : NULL;
         set_str(&p->file, pl, "file");
+        if ((was != NULL) != (p->file != NULL) || (was && strcmp(was, p->file))) {
+            /* Another song: the words on Now Playing were the last one's. */
+            for (int i = 0; i < app.depth; i++) {
+                if (app.stack[i]->style == STYLE_NOWPLAYING) {
+                    items_free(app.stack[i]);
+                    app.stack[i]->time_count = 0;
+                    xfree(&app.stack[i]->note);
+                }
+            }
+        }
+        SDL_free(was);
         p->elapsed = json_num(pl, "elapsed", 0);
         p->elapsed_at = SDL_GetTicks();
         p->duration = json_num(pl, "duration", 0);

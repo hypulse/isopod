@@ -195,6 +195,34 @@ class NoAlbumTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await opened(nobody, "all"), ["Nameless", "Track 1"])
 
 
+class NowPlayingTest(unittest.IsolatedAsyncioTestCase):
+    """What Now Playing shows beside the cover: a line about the song, and words that are timed."""
+
+    async def now_playing(self, file, **tags):
+        class NoApp:
+            t = Translator("en")
+            state = State(lambda snap: None)
+
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, "timed.lrc"), "w") as f:
+            f.write("[00:01.00]One\n[00:05.00]Two\n")
+        with open(os.path.join(d, "plain.txt"), "w") as f:
+            f.write("Words without times\n")
+        app = NoApp()
+        app.music = Music(None, app.state, d, music_dir=d)
+        app.music._by_file = {file: {"year": "", "genre": "", **tags}}
+        app.state.data["player"]["file"] = file
+        page = await Pages(app).build("/nowplaying")
+        return page["note"], [i["title"] for i in page["items"]], page["times"]
+
+    async def test_timed_words_and_a_line_about_the_song(self):
+        self.assertEqual(await self.now_playing("timed.flac", year="2019", genre="Jazz"),
+                         ("2019 · Jazz · FLAC", ["One", "Two"], [1.0, 5.0]))
+
+    async def test_words_without_times_stay_on_their_own_screen(self):
+        self.assertEqual(await self.now_playing("plain.mp3"), ("MP3", [], None))
+
+
 class CoverArtTest(unittest.IsolatedAsyncioTestCase):
     async def test_songs_sharing_a_folder_keep_their_own_album_covers(self):
         class Pictures:

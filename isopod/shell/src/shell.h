@@ -26,7 +26,7 @@ typedef struct Page {
     Item *items;
     int count;
     bool loaded, loading_shown, tall, art_rows, live, index, sheet, split;
-    char *empty_title, *empty_text, *empty_icon;
+    char *empty_title, *empty_text, *empty_icon, *note;
     int value, min, max, step;
     int sel;
     float scroll, scroll_from, scroll_to;
