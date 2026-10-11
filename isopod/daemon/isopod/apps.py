@@ -61,15 +61,14 @@ class AppSpec:
     """`awake` holds the screen: 0 keeps it lit while the app is in front, N stretches the
     timeout to at least N seconds, None leaves it to the setting."""
 
-    def __init__(self, key, title_key, argv, needs=None, pauses_music=False, env=None, setup=None,
-                 awake=None, control=None):
+    def __init__(self, key, title_key, argv, needs=None, pauses_music=False, env=None, awake=None,
+                 control=None):
         self.key = key
         self.title_key = title_key
         self.argv = argv
         self.needs = needs
         self.pauses_music = pauses_music
         self.env = env or {}
-        self.setup = setup
         self.awake = awake
         self.control = control  # mpv's JSON IPC socket, to pause it when headphones go
 
@@ -77,50 +76,8 @@ class AppSpec:
         return self.needs is None or _first_existing(*self.needs) is not None
 
 
-KOREADER_HOME = "/storage/.config/koreader"
-KOREADER_DEFAULTS = """-- Written once by isoPod; KOReader owns this file from now on.
-return {
-    ["home_dir"] = "/storage/books",
-    ["lastdir"] = "/storage/books",
-    ["language"] = "%s",
-    ["back_in_reader"] = "default",
-    ["back_to_exit"] = "always",
-    ["quickstart_shown_version"] = 999999999,
-    ["color_rendering"] = true,
-}
-"""
-
-
-def prepare_koreader(data_dir, lang):
-    """Install isoPod's button layout patch and first-run settings into KOReader's home."""
-    try:
-        patches = os.path.join(KOREADER_HOME, "patches")
-        os.makedirs(patches, exist_ok=True)
-        src = os.path.join(data_dir, "koreader", "patches")
-        for name in os.listdir(src):
-            shutil.copyfile(os.path.join(src, name), os.path.join(patches, name))
-        settings = os.path.join(KOREADER_HOME, "settings.reader.lua")
-        if not os.path.exists(settings):
-            with open(settings, "w") as f:
-                f.write(KOREADER_DEFAULTS % ("ko_KR" if lang == "ko" else "en"))
-    except OSError as e:
-        log.warning("could not prepare KOReader: %s", e)
-
-
-def catalog(data_dir, lang=lambda: "ko", sim=False, run_dir="/run/isopod"):
-    koreader = _first_existing("/usr/bin/koreader", "/storage/koreader/koreader.sh")
-    portmaster = _first_existing("/usr/bin/start_portmaster.sh")
-    if sim:
-        koreader, portmaster = "koreader", "start_portmaster.sh"
+def catalog(data_dir, sim=False, run_dir="/run/isopod"):
     specs = {
-        "koreader": AppSpec("koreader", "books", [koreader] if koreader else None, needs=[koreader],
-                            env={"KO_HOME": KOREADER_HOME, "SDL_FULLSCREEN": "1",
-                                 "EMULATE_READER_W": "640", "EMULATE_READER_H": "480"},
-                            setup=lambda: prepare_koreader(data_dir, lang()), awake=600),
-        "portmaster": AppSpec("portmaster", "PortMaster", [portmaster] if portmaster else None,
-                              needs=[portmaster]),
-        "retroarch": AppSpec("retroarch", "RetroArch", ["retroarch"], needs=["retroarch"],
-                             pauses_music=True),
         "video": AppSpec("video", "videos", ["mpv", f"--config-dir={data_dir}/mpv",
                                              f"--input-ipc-server={run_dir}/mpv.sock"],
                          needs=["mpv"], pauses_music=True, awake=0, control=f"{run_dir}/mpv.sock"),
@@ -169,10 +126,6 @@ class Apps:
         app = self.running.get(self.front)
         return bool(app and app["media"])
 
-    def opened_file(self, key):
-        app = self.running.get(key)
-        return app["args"][0] if app and app["args"] else None
-
     def is_media(self, key):
         app = self.running.get(key)
         return bool(app and app["media"])
@@ -216,7 +169,7 @@ class Apps:
         self.state.replace("apps", [
             {"key": key, "title": app["title"], "frozen": app["frozen"], "front": key == self.front}
             for key, app in self.running.items()])
-        self.events.page_changed("/", "/books/*", "/games")
+        self.events.page_changed("/")
 
     def _free_workspace(self):
         used = {app["workspace"] for app in self.running.values()}
@@ -242,8 +195,6 @@ class Apps:
         if self.sim:
             log.info("sim: launch %s", argv)
         elif self.runner == "direct":
-            if spec.setup:
-                spec.setup()
             try:
                 proc = await asyncio.create_subprocess_exec(*argv, env={**os.environ, **env}, start_new_session=True)
             except OSError as e:
@@ -254,9 +205,7 @@ class Apps:
             await run("swaymsg", "workspace", "number", str(workspace))
             spawn(self._watch_start(spec.key, unit))
         else:
-            if spec.setup:
-                spec.setup()
-            # Every process gets SIGTERM so readers and games can save before they go.
+            # Every process gets SIGTERM, so an app can save before it goes.
             cmd = ["systemd-run", f"--unit={unit}", "--collect", "--quiet",
                    "--property=TimeoutStopSec=5", "--property=OOMScoreAdjust=300"]
             cmd += [f"--setenv={k}={v}" for k, v in env.items()]
@@ -356,8 +305,8 @@ class Apps:
                 if change == "new":
                     spawn(self._adopt(event.get("container") or {}))
                 elif change == "close":
-                    # Ports and PortMaster name their own windows, so any close is a
-                    # reason to look at every app.
+                    # An app may name its own windows, so any close is a reason to look
+                    # at every app.
                     for key in list(self.running):
                         spawn(self._reap(key))
             await proc.wait()
@@ -383,17 +332,3 @@ class Apps:
             await run("swaymsg", "workspace", "number", str(SHELL_WORKSPACE))
             self.events.foreground_changed()
         self._publish()
-
-
-def installed_ports(ports_dir):
-    """Launch scripts PortMaster installed, as (title, path)."""
-    try:
-        names = sorted(os.listdir(ports_dir), key=str.casefold)
-    except OSError:
-        return []
-    return [(os.path.splitext(n)[0], os.path.join(ports_dir, n)) for n in names
-            if n.endswith(".sh") and n.lower() != "portmaster.sh"]
-
-
-def port_spec(title, path):
-    return AppSpec("port", title, ["bash", path], pauses_music=True)

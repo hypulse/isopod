@@ -8,7 +8,7 @@
 #include "cJSON.h"
 #include "theme.h"
 
-enum { ACC_NONE, ACC_CHEVRON, ACC_CHECK, ACC_SWITCH, ACC_SPINNER, ACC_PLAYING, ACC_STAR };
+enum { ACC_NONE, ACC_CHEVRON, ACC_CHECK, ACC_SWITCH, ACC_SPINNER, ACC_PLAYING };
 enum { STYLE_LIST, STYLE_NOWPLAYING, STYLE_SLIDER, STYLE_ABOUT, STYLE_COVERFLOW, STYLE_LYRICS };
 enum { FONT_REGULAR, FONT_MEDIUM, FONT_SEMIBOLD, FONT_BOLD, FONT_WEIGHTS };
 
@@ -84,12 +84,12 @@ typedef struct {
 } Keyboard;
 
 typedef struct {
-    char state[8], kind[8];
+    char state[8];
     char *title, *artist, *album, *art, *file;
     double elapsed, duration;
     Uint32 elapsed_at;
     int pos, count;
-    bool shuffle, repeat, single, buffering;
+    bool shuffle, repeat, single;
 } Player;
 
 typedef struct {

@@ -12,13 +12,11 @@ from .input import Input
 from .ipc import Server
 from .mpd import MPD
 from .music import Music
-from .pages import BOOK_EXTS, VIDEO_EXTS, Pages
+from .pages import Pages
 from .power import Power
-from .radio import Radio, SongLog
 from .settings import Settings
 from .state import State
 from .system import System
-from .transfer import Transfer
 from .util import spawn
 from .wifi import FakeWifi, Nmcli, Wifi
 
@@ -33,19 +31,14 @@ class App:
     def __init__(self, args):
         self.sim = args.sim
         self.paths = {"socket": args.socket, "config": args.config, "cache": args.cache,
-                      "music": args.music, "videos": args.videos, "books": args.books,
-                      "ports": args.ports, "data": args.data}
+                      "music": args.music, "videos": args.videos, "data": args.data}
         self.settings = Settings(args.config)
         self.t = Translator(self.settings["lang"])
         self.state = State(self._state_changed)
         self.server = Server(args.socket, self._handle)
         self.system = System(sim=self.sim)
-        self.music = Music(MPD(args.mpd, args.mpd_port), self.state, self.t, args.cache, notify=self.toast,
-                           music_dir=args.music)
+        self.music = Music(MPD(args.mpd, args.mpd_port), self.state, args.cache, music_dir=args.music)
         self.music.song_changed = lambda: self.page_changed("/nowplaying/lyrics")
-        self.radio = Radio(args.config, args.cache)
-        self.songs = SongLog(args.config, changed=lambda: self.page_changed("/radio/songs"))
-        self.music.on_air = self.songs.playing
         self.bluetooth = Bluetooth(FakeBackend() if self.sim else RavelBackend(),
                                    self.state, self.settings, self.t, self, self.system)
         self.wifi = Wifi(FakeWifi() if self.sim else Nmcli(), self.state, self.t, self)
@@ -57,10 +50,8 @@ class App:
         runner = getattr(args, "apps", None) or ("sim" if self.sim else "systemd")
         self.apps = Apps(self.state, self, {k: v for k, v in os.environ.items() if k in APP_ENV_KEYS},
                          runner=runner)
-        self.catalog = catalog(args.data, lambda: self.t.lang, sim=runner == "sim",
-                               run_dir=os.path.dirname(args.socket))
+        self.catalog = catalog(args.data, sim=runner == "sim", run_dir=os.path.dirname(args.socket))
         self.pages = Pages(self)
-        self.transfer = Transfer(self, VIDEO_EXTS, BOOK_EXTS)
         self.input = None if self.sim else Input(self)
         self._last_player_state = "stop"
         self.ui_ready_at = None

@@ -12,11 +12,7 @@ key down
 wait 1200
 key down
 wait 1200
-key down
-wait 1200
-key down
-wait 1200
-hold up 5
+hold up 3
 wait 1500
 
 caption 음악 › 커버 플로우 · 앨범 커버를 넘겨 보세요
@@ -54,9 +50,7 @@ key right
 wait 700
 key right
 wait 1800
-caption L1/R1 이전·다음 곡 · Start 재생/일시정지
-key next
-wait 2000
+caption Start · 재생/일시정지
 key play
 wait 1500
 key play
@@ -90,8 +84,7 @@ key control
 wait 1000
 
 caption 설정 › 블루투스 · 헤드폰은 한 번 눌러 연결
-hold up 8
-hold down 5
+hold down 2
 wait 600
 key confirm
 wait 900
@@ -137,7 +130,7 @@ wait 800
 caption 음악 검색 · 두벌식 한글 자판, 초성만으로도 찾아요
 daemon home
 wait 800
-hold up 8
+hold up 2
 key confirm
 wait 900
 hold down 7
@@ -158,43 +151,16 @@ key play
 wait 3000
 shot d12-search.png
 
-caption 라디오 · 전 세계 방송, 즐겨찾기, 한국
+caption 비디오 · videos 폴더의 동영상을 바로 재생해요 (음악은 멈춰요)
 daemon home
 wait 800
-hold up 8
 key down
-wait 500
-key confirm
-wait 1500
-key down
-wait 500
-key confirm
-wait 4500
-shot d13-radio.png
-caption 방송을 고르면 바로 ‘연결 중…’, 이어서 라이브
-key confirm
-wait 1200
-shot d14-connecting.png
-wait 6000
-shot d15-live.png
-key more
-wait 1500
-key confirm
-wait 2500
-
-caption 책 · books 폴더의 전자책을 KOReader로 열어요
-daemon home
-wait 800
-hold up 8
-hold down 3
 wait 500
 key confirm
 wait 2000
-shot d16-books.png
+shot d13-videos.png
 key down
-wait 400
-key down
-wait 400
+wait 500
 key confirm
 wait 2000
 caption 멀티태스킹 · Home을 누르면 앱은 그 자리에서 멈춰 기다려요
@@ -202,33 +168,17 @@ daemon home
 wait 1500
 hold down 12
 wait 2000
-shot d17-open-apps.png
-caption 게임 · PortMaster와 설치한 포트 (게임을 열면 음악은 멈춰요)
-hold up 12
-hold down 4
-wait 500
-key confirm
-wait 2000
-shot d18-games.png
-hold down 2
-wait 500
-key confirm
-wait 1500
-daemon home
-wait 1200
-caption 열린 앱은 홈에서 골라 이어 가고, X로 닫아요 (앱이 3개를 넘으면 오래된 것부터 닫혀요)
-hold down 12
-wait 1500
-shot d19-apps-list.png
+shot d14-open-apps.png
+caption 열린 앱은 홈에서 골라 이어 가고, X로 닫아요
 key more
 wait 1500
 key confirm
 wait 2000
-shot d20-closed.png
+shot d15-closed.png
 
 caption 설정 › 최대 음량 · 헤드폰 볼륨의 상한
 hold up 12
-hold down 5
+hold down 2
 wait 500
 key confirm
 wait 900
@@ -268,16 +218,8 @@ key back
 wait 500
 key back
 wait 600
-caption Wi-Fi로 파일 넣기 · 브라우저에 끌어다 놓으면 종류별로 들어가요
-hold down 3
-wait 500
-key confirm
-wait 3500
-shot d24-transfer.png
-key back
-wait 600
 caption 정보 · 부팅 시간, 용량, 버전
-key down
+hold down 3
 wait 400
 key confirm
 wait 3000
@@ -285,7 +227,7 @@ shot d25-about.png
 key back
 wait 600
 caption 언어 · English
-hold up 2
+key up
 wait 400
 key confirm
 wait 800

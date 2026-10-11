@@ -88,8 +88,7 @@ static void draw_row(Page *p, int i, int x, int y, int w, bool selected)
     int left = x + PAD_X, right = x + w - PAD_X;
 
     if (p->art_rows) {
-        const char *fallback = !SDL_strncmp(p->path, "/radio", 6) ? "art-radio" : "art-default";
-        draw_image(it->art, fallback, left, y + (h - ART_THUMB) / 2, ART_THUMB, 0);
+        draw_image(it->art, "art-default", left, y + (h - ART_THUMB) / 2, ART_THUMB, 0);
         left += ART_THUMB + 14;
     } else if (it->icon) {
         const char *name = device_icon(it->icon);
@@ -119,8 +118,6 @@ static void draw_row(Page *p, int i, int x, int y, int w, bool selected)
         draw_icon("speaker", right - 22, y + (h - 20) / 2, selected ? C_WHITE : C_ACCENT);
         right -= 36;
         break;
-    case ACC_STAR:
-        draw_icon("star", right - 20, y + (h - 20) / 2, selected ? C_WHITE : RGB(255, 184, 0));
         right -= 34;
         break;
     }
@@ -224,22 +221,6 @@ static void draw_progress_row(Player *pl, int y)
         wants_frame = true;
         return;
     }
-    if (!strcmp(pl->kind, "radio")) {
-        if (pl->buffering) {
-            const char *text = S("connecting", "Connecting…");
-            int tw = text_width(FONT_SEMIBOLD, FONT_SMALL, text);
-            draw_spinner(SCREEN_W / 2 - tw / 2 - 18, y, C_TEXT2);
-            draw_text(FONT_SEMIBOLD, FONT_SMALL, text, SCREEN_W / 2 - tw / 2 + 4, y - 13, C_TEXT2, 0);
-            wants_frame = true;
-            return;
-        }
-        const char *live = S("live", "LIVE");
-        int tw = text_width(FONT_SEMIBOLD, FONT_SMALL, live);
-        bool on_air = !strcmp(pl->state, "play");
-        fill_round(SCREEN_W / 2 - tw / 2 - 22, y - 7, 14, 14, 7, on_air ? C_RED : C_TEXT3);
-        draw_text(FONT_SEMIBOLD, FONT_SMALL, live, SCREEN_W / 2 - tw / 2, y - 13, C_TEXT2, 0);
-        return;
-    }
     double e = live_elapsed(pl);
     char a[16], b[16];
     fmt_time(e, a, sizeof(a));
@@ -263,20 +244,18 @@ static void draw_nowplaying(int x)
                          CONTENT_Y + CONTENT_H / 2 - 16, C_TEXT2, SCREEN_W - 80);
         return;
     }
-    bool radio = !strcmp(pl->kind, "radio");
     int ix = x + SCREEN_W - 36;
-    if (pl->repeat && !radio) {
+    if (pl->repeat) {
         draw_icon(pl->single ? "repeat-one" : "repeat", ix - 24, CONTENT_Y + 14, C_ACCENT);
         ix -= 34;
     }
-    if (pl->shuffle && !radio)
+    if (pl->shuffle)
         draw_icon("shuffle", ix - 24, CONTENT_Y + 14, C_ACCENT);
 
     const int art = 272, ax = x + 36, ay = CONTENT_Y + 40;
-    const char *fallback = radio ? "art-radio" : "art-default";
     for (int s = 2; s >= 1; s--)
         fill_rect(ax - s * 3, ay - s * 3 + 8, art + s * 6, art + s * 6, RGBA(0, 0, 0, 9));
-    draw_image(pl->art, fallback, ax, ay, art, 0);
+    draw_image(pl->art, "art-default", ax, ay, art, 0);
 
     int tx = ax + art + 28, tw = x + SCREEN_W - 30 - tx;
     int title_lines = text_width(FONT_BOLD, FONT_NP_TITLE, pl->title) > tw ? 2 : 1;
@@ -286,7 +265,7 @@ static void draw_nowplaying(int x)
     int lines = draw_text_wrap(FONT_BOLD, FONT_NP_TITLE, pl->title, tx, ty, tw, 38, 2, C_TEXT);
     ty += lines * 38 + 10;
     if (pl->artist && *pl->artist)
-        draw_text_wrap(FONT_REGULAR, FONT_NP_LINE, pl->artist, tx, ty, tw, 32, radio ? 2 : 1, C_TEXT);
+        draw_text_wrap(FONT_REGULAR, FONT_NP_LINE, pl->artist, tx, ty, tw, 32, 1, C_TEXT);
     if (has_album)
         draw_text(FONT_REGULAR, FONT_NP_LINE, pl->album, tx, ty + 32, C_TEXT2, tw);
 
@@ -419,11 +398,9 @@ typedef struct {
 } Tone;
 
 static const Tone TONES[] = {
-    {"music", RGB(255, 94, 108), RGB(214, 36, 82)},     {"radio", RGB(186, 104, 255), RGB(112, 64, 232)},
-    {"video", RGB(72, 170, 255), RGB(28, 98, 226)},     {"book", RGB(255, 176, 64), RGB(240, 112, 36)},
-    {"game", RGB(72, 214, 134), RGB(24, 156, 92)},      {"settings", RGB(156, 162, 176), RGB(96, 102, 116)},
-    {"playlist", RGB(255, 122, 172), RGB(226, 60, 124)}, {"genre", RGB(90, 206, 226), RGB(34, 140, 184)},
-    {"search", RGB(126, 136, 158), RGB(70, 80, 104)},
+    {"music", RGB(255, 94, 108), RGB(214, 36, 82)},      {"video", RGB(72, 170, 255), RGB(28, 98, 226)},
+    {"settings", RGB(156, 162, 176), RGB(96, 102, 116)}, {"playlist", RGB(255, 122, 172), RGB(226, 60, 124)},
+    {"genre", RGB(90, 206, 226), RGB(34, 140, 184)},     {"search", RGB(126, 136, 158), RGB(70, 80, 104)},
 };
 
 #define KB_MS 7000
@@ -468,10 +445,8 @@ static void draw_panel(Page *p, const char *kind, int px, int py, int pw, int ph
     }
     Player *pl = &app.status.player;
     if (!strcmp(kind, "now") && (pl->count || strcmp(pl->state, "stop"))) {
-        bool radio = !strcmp(pl->kind, "radio");
         float u = (el % 24000) / 24000.0f;
-        ken_burns(pl->art, radio ? "art-radio" : "art-default", px, py, pw, ph, u < 0.5f ? u * 2 : 2 - u * 2, 2,
-                  alpha);
+        ken_burns(pl->art, "art-default", px, py, pw, ph, u < 0.5f ? u * 2 : 2 - u * 2, 2, alpha);
         return;
     }
     if (!strcmp(kind, "art") || !strcmp(kind, "now"))

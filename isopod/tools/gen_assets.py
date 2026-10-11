@@ -5,7 +5,7 @@ import math
 import os
 import sys
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 SS = 4
 BOLD_FONT = os.environ.get("ISOPOD_BOLD_FONT", "/usr/share/fonts/pretendard/Pretendard-Bold.otf")
@@ -77,13 +77,6 @@ def speaker_body(d, ox, oy, k):
 CLEAR = (0, 0, 0, 0)
 
 
-def star(d, cx, cy, outer, inner):
-    pts = []
-    for i in range(10):
-        r = outer if i % 2 == 0 else inner
-        a = math.radians(-90 + i * 36)
-        pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
-    poly(d, pts)
 
 
 def empty_icons(P):
@@ -95,7 +88,6 @@ def empty_icons(P):
         done(img, 72, 72, P("empty-" + name))
 
     glyph("music", lambda d: note(d, 18, 16, 0.9))
-    glyph("star", lambda d: star(d, 36, 37.5, 18, 7.6))
 
     def wifi(d):
         ellipse(d, 32.5, 45, 39.5, 52)
@@ -113,24 +105,6 @@ def empty_icons(P):
         poly(d, [(31, 29.5), (31, 42.5), (42.5, 36)])
     glyph("video", video)
 
-    def book(d):
-        poly(d, [(15, 24), (34, 27.5), (34, 50), (15, 46.5)])
-        poly(d, [(38, 27.5), (57, 24), (57, 46.5), (38, 50)])
-    glyph("book", book)
-
-    def upload(d):
-        line(d, [(36, 44), (36, 20)], 3.6)
-        line(d, [(26, 30), (36, 20), (46, 30)], 3.6)
-        line(d, [(20, 42), (20, 52), (52, 52), (52, 42)], 3.6)
-    glyph("upload", upload)
-
-    def game(d):
-        rrect(d, 13, 25, 59, 49, 12)
-        d.rectangle([s(20), s(35.5), s(31), s(38.5)], fill=CLEAR)
-        d.rectangle([s(24), s(31.5), s(27), s(42.5)], fill=CLEAR)
-        d.ellipse([s(43.5), s(37.5), s(49.5), s(43.5)], fill=CLEAR)
-        d.ellipse([s(49), s(31), s(55), s(37)], fill=CLEAR)
-    glyph("game", game)
 
 
 def glyphs(P):
@@ -142,30 +116,10 @@ def glyphs(P):
 
     glyph("music", lambda d: note(d, 24, 22, 2.0))
 
-    def radio(d):
-        ellipse(d, 56, 62, 72, 78)
-        for r in (24, 40, 56):
-            arc(d, 64, 70, r, 215, 325, 7)
-            arc(d, 64, 70, r, 35, 145, 7)
-    glyph("radio", radio)
-
     def video(d):
         rrect(d, 18, 32, 110, 96, 14, fill=False, width=7)
         poly(d, [(54, 48), (54, 80), (84, 64)])
     glyph("video", video)
-
-    def book(d):
-        poly(d, [(20, 38), (60, 45), (60, 96), (20, 89)])
-        poly(d, [(68, 45), (108, 38), (108, 89), (68, 96)])
-    glyph("book", book)
-
-    def game(d):
-        rrect(d, 14, 40, 114, 92, 26)
-        d.rectangle([s(29), s(62), s(53), s(70)], fill=CLEAR)
-        d.rectangle([s(37), s(54), s(45), s(78)], fill=CLEAR)
-        d.ellipse([s(76), s(66), s(88), s(78)], fill=CLEAR)
-        d.ellipse([s(90), s(54), s(102), s(66)], fill=CLEAR)
-    glyph("game", game)
 
     def settings(d):
         for i in range(8):
@@ -236,15 +190,6 @@ def build(out):
     arc(d, 11, 10, 5, -50, 50, 1.8)
     arc(d, 11, 10, 9, -50, 50, 1.8)
     done(img, 22, 20, P("speaker"))
-
-    img, d = canvas(20, 20)
-    pts = []
-    for i in range(10):
-        r = 9.5 if i % 2 == 0 else 4
-        a = math.radians(-90 + i * 36)
-        pts.append((10 + r * math.cos(a), 10.5 + r * math.sin(a)))
-    poly(d, pts)
-    done(img, 20, 20, P("star"))
 
     img, d = canvas(14, 20)
     arc(d, 7, 8, 4.5, 180, 360, 2.2)
@@ -353,7 +298,7 @@ def build(out):
     headphones(d, 4, 4, 1.8, 3.4)
     done(img, 80, 80, P("hud-headphones"))
 
-    for name in ("bluetooth", "wifi", "star", "music", "moon", "battery"):
+    for name in ("bluetooth", "wifi", "music", "moon", "battery"):
         img, d = canvas(22, 22)
         if name == "bluetooth":
             line(d, [(5.5, 7), (15.5, 15.5), (11, 20), (11, 2), (15.5, 6.5), (5.5, 15)], 2)
@@ -361,8 +306,6 @@ def build(out):
             ellipse(d, 9, 16, 13, 20)
             for r in (6, 11, 16):
                 arc(d, 11, 18, r, 225, 315, 2.2)
-        elif name == "star":
-            star(d, 11, 11.5, 10, 4.2)
         elif name == "moon":
             ellipse(d, 2, 2, 20, 20)
             d.ellipse([s(7.5), s(-1.5), s(24), s(15)], fill=CLEAR)
@@ -397,17 +340,6 @@ def art(out):
     tint = Image.new("RGBA", (size, size), (158, 158, 166, 255))
     base.paste(tint, (0, 0), glyph)
     base.convert("RGB").save(os.path.join(out, "art-default.png"))
-
-    base = gradient(size, (98, 128, 255), (170, 82, 222))
-    glyph, d = canvas(128, 128)
-    ellipse(d, 56, 60, 72, 76)
-    for r in (18, 30, 42):
-        arc(d, 64, 68, r, 215, 325, 5)
-        arc(d, 64, 68, r, 35, 145, 5)
-    glyph = glyph.resize((size, size), Image.LANCZOS).filter(ImageFilter.GaussianBlur(0.6))
-    white = Image.new("RGBA", (size, size), (255, 255, 255, 235))
-    base.paste(white, (0, 0), glyph)
-    base.convert("RGB").save(os.path.join(out, "art-radio.png"))
 
 
 if __name__ == "__main__":

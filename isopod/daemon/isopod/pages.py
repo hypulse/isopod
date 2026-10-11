@@ -1,15 +1,9 @@
 import asyncio
-import datetime
-import hashlib
 import logging
 import os
 import secrets
 import zlib
 
-from . import news
-from .apps import installed_ports, port_spec
-from .ebook import Glossary, annotate_epub, follow_position, settle_position
-from .radio import RadioError
 from .system import human_size
 from .util import enc, sort_key, spawn, split_path
 
@@ -17,8 +11,6 @@ log = logging.getLogger("isopod.pages")
 
 VIDEO_EXTS = (".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".ts", ".m2ts", ".mts", ".mpg", ".mpeg", ".wmv",
               ".asf", ".flv", ".f4v", ".3gp", ".ogv", ".vob", ".divx", ".rm", ".rmvb")
-BOOK_EXTS = (".epub", ".pdf", ".mobi", ".azw3", ".azw", ".fb2", ".fb2.zip", ".cbz", ".cbr", ".djvu",
-             ".txt", ".md", ".rtf", ".docx", ".odt", ".html", ".htm", ".chm", ".xps")
 TIMEOUTS = (15, 30, 60, 120, 300, 0)
 LIMITS = (100, 90, 80, 70, 60, 50)
 
@@ -43,14 +35,6 @@ def empty(icon, title, text=None):
     return {"icon": icon, "title": title, "text": text}
 
 
-def _when(stamp):
-    """A time of day for today, the date before it for older days."""
-    if not stamp:
-        return None
-    then = datetime.datetime.fromtimestamp(stamp)
-    return f"{then:%H:%M}" if then.date() == datetime.date.today() else f"{then.month}/{then.day} {then:%H:%M}"
-
-
 def _strip_ext(name, exts):
     lower = name.lower()
     ext = max((e for e in exts if lower.endswith(e)), key=len, default="")
@@ -65,7 +49,7 @@ def folder_listing(folder, exts):
         return [], []
     dirs, files = [], []
     for e in entries:
-        if e.name.startswith(".") or e.name.endswith(".sdr"):
+        if e.name.startswith("."):
             continue
         try:
             if e.is_dir():
@@ -81,11 +65,7 @@ class Pages:
     def __init__(self, app):
         self.app = app
         self._tokens = {}
-        self._stations = {}
         self._art_jobs = set()
-        self._busy_books = set()
-        self._glossaries = {}
-        self._news_job = None
 
     @property
     def t(self):
@@ -141,10 +121,8 @@ class Pages:
             self.app.power.apply_brightness()
 
     def leave(self, path):
-        if path in ("/settings/bluetooth",):
+        if path == "/settings/bluetooth":
             self.app.bluetooth.end_discovery()
-        elif path == "/settings/transfer":
-            self.app.transfer.stop()
 
     # root --------------------------------------------------------------------
 
@@ -162,10 +140,7 @@ class Pages:
         t = self.t
         items = [
             item("music", t("music"), preview="art"),
-            item("radio", t("radio"), preview="radio"),
             item("videos", t("videos"), preview="video"),
-            item("books", t("books"), preview="book"),
-            item("games", t("games"), preview="game"),
             item("settings", t("settings"), preview="settings"),
             item("shuffle", t("shuffle_songs"), "none", preview="art"),
         ]
@@ -175,9 +150,7 @@ class Pages:
         apps = self.app.state.get("apps")
         if apps:
             items.append(header(t("open_apps")))
-            for a in apps:
-                kind = {"koreader": "book", "video": "video"}.get(a["key"], "game")
-                items.append(item(f"app:{a['key']}", a["title"], "none", preview=kind))
+            items += [item(f"app:{a['key']}", a["title"], "none", preview="video") for a in apps]
         return page("/", "isoPod", items, live=True, layout="split", art=self._art_pool(path))
 
     async def _do_root(self, path, rest, key):
@@ -368,6 +341,10 @@ class Pages:
                 return {"push": "/music/album/" + enc(song["albumartist"], song["album"])}
         return {"sheet": {"title": song["title"], "items": options, "token": self._token(choose)}}
 
+    def _music_search(self, text):
+        text = (text or "").strip()
+        return {"push": "/music/search/" + enc(text)} if text else {"none": True}
+
     def _album_art(self, file):
         return self.app.music._art_for(file)
 
@@ -407,36 +384,19 @@ class Pages:
         player = self.app.state.get("player")
         left = self.app.power.sleep_timer_left()
         timer = {"key": "timer", "title": t("sleep_timer"), "value": t("minutes", n=left) if left else None}
-        if player["kind"] == "radio":
-            station = self.app.music.station
-            if not station:
-                return {"none": True}
-            fav = self.app.radio.is_favorite(station["uuid"])
-            options = [{"key": "fav", "title": t("remove_favorite") if fav else t("add_favorite")}, timer]
-            on_air = self.app.songs.on_air
-            if on_air:
-                kept = (self.app.songs.find(on_air[0]) or {}).get("saved")
-                options.insert(0, {"key": "song", "title": t("unsave_song") if kept else t("save_song")})
-        else:
-            repeat = (t("repeat_one") if player["single"] else t("on")) if player["repeat"] else None
-            options = [
-                {"key": "shuffle", "title": t("shuffle"), "value": t("on") if player["shuffle"] else None},
-                {"key": "repeat", "title": t("repeat"), "value": repeat},
-                {"key": "queue", "title": t("up_next")},
-            ]
-            if player["album"]:
-                options.append({"key": "album", "title": t("go_to_album")})
-            options.append(timer)
+        repeat = (t("repeat_one") if player["single"] else t("on")) if player["repeat"] else None
+        options = [
+            {"key": "shuffle", "title": t("shuffle"), "value": t("on") if player["shuffle"] else None},
+            {"key": "repeat", "title": t("repeat"), "value": repeat},
+            {"key": "queue", "title": t("up_next")},
+        ]
+        if player["album"]:
+            options.append({"key": "album", "title": t("go_to_album")})
+        options.append(timer)
 
         async def choose(choice):
             m = self.app.music
-            if choice == "fav" and m.station:
-                added = self.app.radio.toggle_favorite(m.station)
-                self.app.toast(t("added_favorite") if added else t("removed_favorite"), "star")
-            elif choice == "song":
-                self.app.songs.set_saved(on_air[0], not kept, on_air[1])
-                self.app.toast(t("song_unsaved") if kept else t("song_saved"), "star")
-            elif choice == "shuffle":
+            if choice == "shuffle":
                 await m.set_shuffle(not player["shuffle"])
             elif choice == "repeat":
                 await m.cycle_repeat()
@@ -465,131 +425,7 @@ class Pages:
         return {"sheet": {"title": t("sleep_timer"), "token": self._token(choose),
                           "items": [{"key": str(m), "title": label} for m, label in choices]}}
 
-    # radio -------------------------------------------------------------------
-
-    def _station_items(self, path, stations):
-        self._stations[path] = stations
-        items = []
-        for i, s in enumerate(stations):
-            items.append(item(f"st{i}", s["name"], "star" if self.app.radio.is_favorite(s["uuid"]) else "none",
-                              subtitle=", ".join(s["tags"][:2]) or None, art=self._icon_path(s)))
-        self._prefetch_icons(path, stations)
-        return items
-
-    def _icon_path(self, station):
-        return self.app.radio.cached_icon(station)
-
-    def _heard_items(self):
-        songs = self.app.songs
-        items = []
-        for title, entries in ((self.t("saved_songs"), songs.saved()), (self.t("heard_songs"), songs.recent())):
-            if entries:
-                items.append(header(title))
-                items += [item("g:" + e["title"], e["title"], "star" if e["saved"] else "none",
-                               subtitle=" · ".join(filter(None, (e.get("station"), _when(e.get("time"))))))
-                          for e in entries]
-        return items
-
-    def _prefetch_icons(self, path, stations):
-        missing = [s for s in stations[:40] if s.get("favicon") and not self._icon_path(s)]
-        if not missing or ("icons", path) in self._art_jobs:
-            return
-        self._art_jobs.add(("icons", path))
-
-        async def job():
-            try:
-                results = await asyncio.gather(*(self.app.radio.icon(s) for s in missing))
-                if any(results):
-                    self.app.page_changed(path)
-            finally:
-                self._art_jobs.discard(("icons", path))
-        spawn(job())
-
-    async def _page_radio(self, path, rest):
-        t = self.t
-        r = self.app.radio
-        if not rest:
-            items = [item("favorites", t("favorites")), item("songs", t("song_log")),
-                     item("top", t("top_stations")), item("country/KR", t("korea")),
-                     item("countries", t("by_country")), item("search", t("search"))]
-            return page(path, t("radio"), items)
-        kind = rest[0]
-        net_error = empty("wifi", t("network_error"), t("network_error_text"))
-        try:
-            if kind == "favorites":
-                items = self._station_items(path, list(r.favorites))
-                return page(path, t("favorites"), items, rows="art", live=True,
-                            empty=empty("star", t("no_favorites_title"), t("no_favorites_text")))
-            if kind == "songs":
-                return page(path, t("song_log"), self._heard_items(), rows="tall", live=True,
-                            empty=empty("music", t("no_songs_title"), t("no_songs_text")))
-            if kind == "top":
-                return page(path, t("top_stations"), self._station_items(path, await r.top()),
-                            rows="art", empty=net_error)
-            if kind == "country" and len(rest) >= 2:
-                title = rest[2] if len(rest) > 2 else (t("korea") if rest[1] == "KR" else rest[1])
-                return page(path, title, self._station_items(path, await r.by_country(rest[1])),
-                            rows="art", empty=empty("search", t("no_results")))
-            if kind == "countries":
-                items = [item(f"c:{code}:{name}", name, value=str(n)) for code, name, n in await r.countries()]
-                return page(path, t("by_country"), items, empty=net_error)
-            if kind == "search" and len(rest) >= 2:
-                return page(path, rest[1], self._station_items(path, await r.search(rest[1])),
-                            rows="art", empty=empty("search", t("no_results")))
-        except RadioError:
-            return page(path, t("radio"), [], empty=net_error)
-        return page(path, t("radio"), [])
-
-    async def _do_radio(self, path, rest, key):
-        if not rest:
-            if key == "search":
-                return {"input": {"title": self.t("search"), "placeholder": self.t("search_prompt"),
-                                  "token": self._token(self._radio_search)}}
-            return {"push": "/radio/" + key}
-        if rest[0] == "countries":
-            _, code, name = key.split(":", 2)
-            return {"push": "/radio/country/" + enc(code, name)}
-        if rest[0] == "songs":
-            entry = self.app.songs.find(key[2:])
-            if entry:
-                self.app.songs.set_saved(entry["title"], not entry["saved"])
-                self.app.toast(self.t("song_saved" if entry["saved"] else "song_unsaved"), "star")
-            return {"reload": True}
-        stations = self._stations.get(path) or []
-        if key.startswith("st") and int(key[2:]) < len(stations):
-            station = dict(stations[int(key[2:])])
-            station["art"] = self._icon_path(station)
-            await self.app.music.play_stream(station)
-            self.app.radio.report_click(station)
-            return {"nowplaying": True}
-
-    def _delete_song(self, title):
-        self.app.songs.remove(title)
-        return {"reload": True}
-
-    def _music_search(self, text):
-        text = (text or "").strip()
-        return {"push": "/music/search/" + enc(text)} if text else {"none": True}
-
-    def _radio_search(self, text):
-        text = (text or "").strip()
-        return {"push": "/radio/search/" + enc(text)} if text else {"none": True}
-
-    async def _alt_radio(self, path, rest, key):
-        if rest and rest[0] == "songs":
-            entry = self.app.songs.find(key[2:])
-            if not entry:
-                return None
-            title = entry["title"]
-            return {"confirm": {"title": self.t("delete_song_q", name=title), "ok": self.t("delete"),
-                                "destructive": True, "token": self._token(lambda: self._delete_song(title))}}
-        stations = self._stations.get(path) or []
-        if key.startswith("st") and int(key[2:]) < len(stations):
-            added = self.app.radio.toggle_favorite(stations[int(key[2:])])
-            self.app.toast(self.t("added_favorite") if added else self.t("removed_favorite"), "star")
-            return {"reload": True}
-
-    # videos, books, games ----------------------------------------------------
+    # videos ----------------------------------------------------------------
 
     def _media_dir(self, kind, rest):
         root = os.path.normpath(self.app.paths[kind])
@@ -609,194 +445,6 @@ class Pages:
         if key.startswith("f:"):
             file = os.path.join(self._media_dir("videos", rest), key[2:])
             await self.app.launch(self.app.catalog["video"], _strip_ext(key[2:], VIDEO_EXTS), [file])
-
-    async def _page_books(self, path, rest):
-        t = self.t
-        if not self.app.catalog["koreader"].available():
-            return page(path, t("books"), [], empty=empty("book", t("no_reader_title"), t("no_reader_text")))
-        folder = self._media_dir("books", rest)
-        dirs, files = folder_listing(folder, BOOK_EXTS)
-        items = [] if rest else [item("news", t("news"))]
-        items += [item("d:" + d, d) for d in dirs]
-        items += [item("f:" + f, _strip_ext(f, BOOK_EXTS),
-                       "spinner" if os.path.join(folder, f) in self._busy_books else "none") for f in files]
-        return page(path, rest[-1] if rest else t("books"), items, live=True,
-                    empty=empty("book", t("no_books_title"), t("no_books_text")))
-
-    async def _do_books(self, path, rest, key):
-        if key == "news":
-            return {"push": "/news"}
-        if key.startswith("d:"):
-            return {"push": path.rstrip("/") + "/" + enc(key[2:])}
-        if not key.startswith("f:"):
-            return None
-        await self.open_book(os.path.join(self._media_dir("books", rest), key[2:]))
-
-    async def open_book(self, file, prepared=False):
-        apps = self.app.apps
-        lang = self.app.settings["wordwise"].get(file)
-        if lang and file.lower().endswith(".epub"):
-            target = self._wordwise_copy(file, lang)
-            if not prepared and not self._wordwise_fresh(file, lang, target):
-                spawn(self._prepare_wordwise(file, lang, target))
-                return
-            file_to_open = target
-        else:
-            file_to_open = file
-        if apps.opened_file("koreader") == file_to_open:
-            await self.app.resume_app("koreader")
-            return
-        # The open book saves its page as it closes; then this one opens at the page last
-        # read in any of its versions, with Word Wise or without.
-        await apps.close("koreader")
-        if file.lower().endswith(".epub"):
-            follow_position([file] + [self._wordwise_copy(file, lang) for lang in ("ko", "en")], file_to_open)
-        await self.app.launch(self.app.catalog["koreader"], _strip_ext(os.path.basename(file), BOOK_EXTS),
-                              [file_to_open])
-
-    # word wise ---------------------------------------------------------------
-
-    def _glossary_path(self, lang):
-        return os.path.join(self.app.paths["data"], "wordwise", f"en-{lang}.tsv")
-
-    def _glossary(self, lang):
-        if lang not in self._glossaries:
-            self._glossaries[lang] = Glossary(self._glossary_path(lang))
-        return self._glossaries[lang]
-
-    def _wordwise_copy(self, file, lang):
-        """One place per book and language, so the page read there outlives a rebuild."""
-        key = hashlib.sha1(f"{file}|{lang}".encode()).hexdigest()[:16]
-        return os.path.join(self.app.paths["cache"], "wordwise", key, os.path.basename(file))
-
-    def _wordwise_stamp(self, file, lang):
-        """The book and glossary a copy was made from; compared, never ordered, as clocks drift."""
-        try:
-            return f"{os.path.getmtime(file)}|{os.path.getmtime(self._glossary_path(lang))}"
-        except OSError:
-            return None
-
-    def _wordwise_fresh(self, file, lang, target):
-        try:
-            with open(target + ".stamp") as f:
-                return os.path.exists(target) and f.read() == self._wordwise_stamp(file, lang)
-        except OSError:
-            return False
-
-    async def _prepare_wordwise(self, file, lang, target):
-        """Hints go into a copy once; the reader opens the copy from then on."""
-        self._busy_books.add(file)
-        self.app.page_changed("/books/*")
-        try:
-            loop = asyncio.get_running_loop()
-            glossary = await loop.run_in_executor(None, self._glossary, lang)
-            stamp = self._wordwise_stamp(file, lang)
-            await loop.run_in_executor(None, annotate_epub, file, target, glossary)
-            settle_position(target)
-            with open(target + ".stamp", "w") as f:
-                f.write(stamp or "")
-        except Exception as e:
-            log.warning("word wise for %s: %s", file, e)
-            self.app.toast(self.t("wordwise_failed"))
-            return
-        finally:
-            self._busy_books.discard(file)
-            self.app.page_changed("/books/*")
-        await self.open_book(file, prepared=True)
-
-    async def _alt_books(self, path, rest, key):
-        if not key.startswith("f:") or not key.lower().endswith(".epub"):
-            return None
-        file = os.path.join(self._media_dir("books", rest), key[2:])
-        current = self.app.settings["wordwise"].get(file)
-        t = self.t
-        options = [{"key": lang, "title": t(f"wordwise_{lang}"), "value": t("on") if current == lang else None}
-                   for lang in ("ko", "en")]
-        if current:
-            options.append({"key": "off", "title": t("wordwise_off")})
-
-        def choose(choice):
-            chosen = dict(self.app.settings["wordwise"])
-            if choice == "off":
-                chosen.pop(file, None)
-            else:
-                chosen[file] = choice
-            self.app.settings.set("wordwise", chosen)
-            return {"none": True}
-        return {"sheet": {"title": _strip_ext(key[2:], BOOK_EXTS), "items": options, "token": self._token(choose)}}
-
-    # news ----------------------------------------------------------------------
-
-    def _news_dir(self):
-        return os.path.join(self.app.paths["books"], ".news")
-
-    def _edition_label(self, name):
-        try:
-            day = datetime.date.fromisoformat(name[:10])
-        except ValueError:
-            return name
-        return self.t("news_date", m=day.month, d=day.day)
-
-    async def _page_news(self, path, rest):
-        t = self.t
-        folder = self._news_dir()
-        names = news.editions(folder)
-        wifi = bool(self.app.state.get("wifi")["ssid"]) or self.app.sim
-        today = news.edition_name()
-        if wifi and today not in names and self._news_job is None:
-            self._news_job = spawn(self._fetch_news())
-        fetching = self._news_job is not None
-        items = [item("fetch", t("news_fetch"), "spinner" if fetching else "none")]
-        items += [item("e:" + n, self._edition_label(n), "none") for n in names]
-        return page(path, t("news"), items, live=True)
-
-    async def _do_news(self, path, rest, key):
-        if key == "fetch":
-            if not self.app.state.get("wifi")["ssid"] and not self.app.sim:
-                self.app.toast(self.t("transfer_no_wifi"), "wifi")
-            elif self._news_job is None:
-                self._news_job = spawn(self._fetch_news())
-                self.app.page_changed("/news")
-            return None
-        if key.startswith("e:"):
-            await self.app.launch(self.app.catalog["koreader"], self.t("news"),
-                                  [os.path.join(self._news_dir(), key[2:])])
-
-    async def _fetch_news(self):
-        t = self.t
-        folder = self._news_dir()
-        name = news.edition_name()
-        title = t("news_title", date=self._edition_label(name))
-        feeds = news.load_feeds(os.path.join(self.app.paths["config"], "news-feeds.txt"))
-        try:
-            count = await asyncio.get_running_loop().run_in_executor(
-                None, lambda: news.build_edition(os.path.join(folder, name), title, feeds, lang=t.lang))
-            if not count:
-                self.app.toast(t("news_failed"))
-            news.prune(folder)
-        except Exception as e:
-            log.warning("news: %s", e)
-            self.app.toast(t("news_failed"))
-        finally:
-            self._news_job = None
-            self.app.page_changed("/news")
-
-    async def _page_games(self, path, rest):
-        items = [item("port:" + p, title, "none") for title, p in installed_ports(self.app.paths["ports"])]
-        items += [item(key, spec.title_key, "none") for key, spec in self.app.catalog.items()
-                  if key in ("portmaster", "retroarch") and spec.available()]
-        return page(path, self.t("games"), items,
-                    empty=empty("game", self.t("no_games_title"), self.t("no_games_text")))
-
-    async def _do_games(self, path, rest, key):
-        if key.startswith("port:"):
-            script = key[5:]
-            title = os.path.splitext(os.path.basename(script))[0]
-            await self.app.launch(port_spec(title, script), title)
-            return None
-        spec = self.app.catalog.get(key)
-        if spec:
-            await self.app.launch(spec, spec.title_key)
 
     # settings ----------------------------------------------------------------
 
@@ -818,25 +466,9 @@ class Pages:
             item("display", t("display")),
             item("limit", t("volume_limit"), value=self._limit_label()),
             item("language", t("language"), value=lang),
-            item("transfer", t("add_files")),
             item("about", t("about")),
         ]
         return page(path, t("settings"), items, live=True)
-
-    async def _settings_transfer(self, path):
-        t = self.t
-        tr = self.app.transfer
-        if not self.app.state.get("wifi")["ssid"] and not self.app.sim:
-            tr.stop()
-            return page(path, t("add_files"), [], live=True,
-                        empty=empty("wifi", t("transfer_no_wifi"), t("transfer_no_wifi_text")))
-        url = tr.url() if await tr.start() else None
-        if not url:
-            return page(path, t("add_files"), [], empty=empty("wifi", t("transfer_failed")))
-        text = t("transfer_code", code=tr.code)
-        if tr.received:
-            text += "\n" + t("transfer_received", n=tr.received)
-        return page(path, t("add_files"), [], live=True, empty=empty("upload", url, text))
 
     async def _settings_wifi(self, path):
         t = self.t

@@ -3,6 +3,14 @@ import re
 STAMP = re.compile(r"\[(\d+):(\d+(?:[.:]\d+)?)\]")
 TAG = re.compile(r"^\[[a-z]+:.*\]$", re.I)
 OFFSET = re.compile(r"^\[offset:\s*([+-]?\d+)\]$", re.I)
+WORD_STAMP = re.compile(r"<\d+:\d+(?:[.:]\d+)?>")
+
+
+def decode(data):
+    """Lyrics files are UTF-8 or, from Windows tools, UTF-16 with a byte order mark."""
+    if data[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return data.decode("utf-16", errors="replace")
+    return data.decode("utf-8-sig", errors="replace")
 
 
 def parse_lrc(text):
@@ -16,7 +24,7 @@ def parse_lrc(text):
             continue
         stamps = STAMP.findall(line)
         if stamps:
-            words = STAMP.sub("", line).strip()
+            words = WORD_STAMP.sub("", STAMP.sub("", line)).strip()
             for minutes, seconds in stamps:
                 timed.append((int(minutes) * 60 + float(seconds.replace(":", ".")), words))
         elif not TAG.match(line):

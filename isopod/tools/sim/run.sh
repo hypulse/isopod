@@ -12,7 +12,6 @@ mkdir -p "$WORK/share" "$WORK/config" "$WORK/cache" "$SHOTS"
 
 ln -sfn /usr/share/fonts/pretendard "$WORK/share/fonts"
 ln -sfn "$ROOT/shell/assets/icons" "$WORK/share/icons"
-ln -sfn "$ROOT/data/wordwise" "$WORK/share/wordwise"
 for f in "$ROOT"/shell/assets/*.png; do ln -sf "$f" "$WORK/share/"; done
 cp -rn "$ROOT/system/mpv" "$WORK/share/" 2>/dev/null || true
 
@@ -34,8 +33,7 @@ mpd "$WORK/mpd.conf"
 
 pkill -f "isopodd --sim" 2>/dev/null || true
 python3 "$ROOT/daemon/isopodd" --sim --socket "$WORK/isopodd.sock" --config "$WORK/config" \
-    --cache "$WORK/cache" --music "$WORK/music" --videos "$WORK/videos" --books "$WORK/books" \
-    --ports "$WORK/ports" --data "$WORK/share" \
+    --cache "$WORK/cache" --music "$WORK/music" --videos "$WORK/videos" --data "$WORK/share" \
     --mpd "$WORK/mpd.sock" >"$WORK/isopodd.log" 2>&1 &
 DAEMON=$!
 

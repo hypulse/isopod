@@ -29,7 +29,7 @@ fi
 # Media lives in /storage; a second microSD card, which a computer can read, shows up
 # inside each library as its own folder.
 CARD=/storage/games-external
-for KIND in music videos books; do
+for KIND in music videos; do
   mkdir -p "/storage/${KIND}"
   LINK="/storage/${KIND}/SD Card"
   if grep -qs " ${CARD} " /proc/mounts && mkdir -p "${CARD}/${KIND}" 2>/dev/null; then
@@ -38,3 +38,12 @@ for KIND in music videos books; do
     rm -f "${LINK}"
   fi
 done
+
+# ROCKNIX's 099-networkservices starts sshd and then, moving on to fstrim, which names no
+# condition file of its own, takes sshd's away again, so the unit is skipped at every boot.
+. /etc/profile.d/001-functions
+if [ "$(get_setting ssh.enabled)" = "1" ]; then
+  mkdir -p /storage/.cache/services
+  touch /storage/.cache/services/sshd.conf
+  systemctl start --no-block sshd
+fi

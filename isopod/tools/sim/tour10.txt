@@ -1,0 +1,57 @@
+# Going around: a press at the end of a list, a sheet or the keyboard lands on the other side,
+# and a held button stops at the end. Also names Pretendard cannot draw (Japanese, Chinese)
+# and songs from different albums that share one folder, each with its own cover.
+wait 1500
+key up
+wait 400
+shot w01-home-last.png
+key down
+wait 400
+shot w02-home-first.png
+hold down 9
+wait 400
+shot w03-home-held-stops.png
+hold up 9
+key confirm
+wait 800
+hold down 3
+key confirm
+wait 2500
+shot w04-albums.png
+key up
+wait 1500
+shot w05-albums-last.png
+key back
+wait 600
+key down
+key confirm
+wait 1500
+key up
+wait 800
+shot w06-songs-last.png
+key confirm
+wait 1500
+shot w07-nowplaying.png
+key more
+wait 500
+key up
+wait 300
+shot w08-sheet-last.png
+key back
+key home
+wait 600
+key confirm
+wait 600
+hold down 7
+key confirm
+wait 500
+key left
+wait 300
+shot w09-keyboard-left-edge.png
+key up
+wait 300
+shot w10-keyboard-top-edge.png
+key down
+key right
+wait 300
+shot w11-keyboard-back.png

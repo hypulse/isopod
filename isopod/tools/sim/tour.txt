@@ -3,7 +3,7 @@ wait 800
 shot 01-home.png
 key confirm
 shot 02-music.png
-key down
+hold down 2
 key confirm
 shot 03-artists.png
 hold down 3
@@ -25,10 +25,10 @@ key home
 wait 400
 key down
 key confirm
-shot 09-radio.png
+shot 09-videos.png
 key home
 wait 400
-hold down 4
+key down
 key confirm
 shot 10-settings.png
 key down

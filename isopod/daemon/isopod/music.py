@@ -4,14 +4,15 @@ import logging
 import os
 import random
 import time
+import unicodedata
 
 from .mpd import MPD, MPDError, records, values
-from .lyrics import parse_lrc
+from .lyrics import decode, parse_lrc
 from .util import matches, sort_key, spawn
 
 log = logging.getLogger("isopod.music")
 
-STREAM_PREFIXES = ("http://", "https://", "hls+http://", "hls+https://")
+LYRIC_EXTS = (".lrc", ".txt")
 
 
 def _int(value, default=0):
@@ -26,6 +27,10 @@ def _float(value, default=0.0):
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _fold(name):
+    return unicodedata.normalize("NFC", name).casefold()
 
 
 class Song(dict):
@@ -47,19 +52,15 @@ class Song(dict):
 
 
 class Music:
-    def __init__(self, mpd: MPD, state, t, cache_dir, notify=None, music_dir="/storage/music"):
+    def __init__(self, mpd: MPD, state, cache_dir, music_dir="/storage/music"):
         self.mpd = mpd
         self.state = state
-        self.t = t
         self.music_dir = music_dir
         self.art_dir = os.path.join(cache_dir, "art")
         self.song_changed = lambda: None
-        self.on_air = lambda title, station: None
-        self.notify = notify or (lambda text, icon=None: None)
         self.songs = []
         self.updating = False
-        self.station = None
-        self._stream_watch = None
+        self._by_file = {}
         self._elapsed = (0.0, time.monotonic())
         self._no_art = set()
         self._listeners = []
@@ -87,8 +88,8 @@ class Music:
             log.warning("library load failed: %s", e)
             return
         recs = records(pairs, start_keys=("file", "directory", "playlist"))
-        self.songs = [Song.from_mpd(r) for r in recs if "file" in r
-                      and not r["file"].startswith(STREAM_PREFIXES)]
+        self.songs = [Song.from_mpd(r) for r in recs if "file" in r]
+        self._by_file = {s["file"]: s for s in self.songs}
         for fn in self._listeners:
             fn()
 
@@ -113,32 +114,17 @@ class Music:
         uri = song.get("file", "")
         if uri != self.state.get("player").get("file"):
             self.song_changed()
-        radio = uri.startswith(STREAM_PREFIXES)
-        info = {
-            "state": playing if song else "stop",
-            "kind": "radio" if radio else "song",
-            "buffering": radio and playing == "play" and not status.get("audio"),
-            "file": uri,
-            "elapsed": elapsed,
-            "duration": 0.0 if radio else _float(status.get("duration") or song.get("duration")),
-            "pos": _int(status.get("song"), -1) + 1,
-            "count": _int(status.get("playlistlength")),
-            "shuffle": status.get("random") == "1",
-            "repeat": status.get("repeat") == "1",
-            "single": status.get("single") == "1",
-        }
-        if radio:
-            station = self.station if self.station and self.station.get("url") == uri else {}
-            info.update(title=station.get("name") or song.get("name") or uri,
-                        artist=song.get("title", ""), album="", art=station.get("art"))
-        else:
-            s = Song.from_mpd(song) if song else Song(title="", artist="", album="")
-            info.update(title=s["title"], artist=s["artist"], album=s["album"])
-            info["art"] = self._art_for(uri) if uri else None
-            if uri and info["art"] is None and self._art_key(uri) not in self._no_art:
-                spawn(self._fetch_art(uri))
-        self.state.update("player", **info)
-        self.on_air(info["artist"] if radio and info["state"] == "play" else "", info["title"])
+        s = Song.from_mpd(song) if song else Song(title="", artist="", album="")
+        art = self._art_for(uri) if uri else None
+        if uri and art is None and uri not in self._no_art:
+            spawn(self._fetch_art(uri))
+        self.state.update(
+            "player", state=playing if song else "stop", file=uri, elapsed=elapsed,
+            duration=_float(status.get("duration") or song.get("duration")),
+            pos=_int(status.get("song"), -1) + 1, count=_int(status.get("playlistlength")),
+            shuffle=status.get("random") == "1", repeat=status.get("repeat") == "1",
+            single=status.get("single") == "1", title=s["title"], artist=s["artist"], album=s["album"],
+            art=art)
 
     def _live_elapsed(self, snap):
         player = snap["player"]
@@ -147,7 +133,11 @@ class Music:
             player["elapsed"] = base + (time.monotonic() - at)
 
     def _art_key(self, uri):
-        return hashlib.sha1(os.path.dirname(uri).encode()).hexdigest()[:16]
+        """One cover per album. A song without an album tag keeps its own, and a folder is
+        no guide: twenty songs from twenty albums can sit side by side in one."""
+        song = self._by_file.get(uri)
+        name = f"{song['albumartist']}\0{song['album']}" if song and song["album"] else uri
+        return hashlib.sha1(name.encode()).hexdigest()[:16]
 
     def _art_for(self, uri):
         base = os.path.join(self.art_dir, self._art_key(uri))
@@ -174,7 +164,7 @@ class Music:
     async def _fetch_art(self, uri):
         path = await self.art_path(uri)
         if not path:
-            self._no_art.add(self._art_key(uri))
+            self._no_art.add(uri)
         elif self.state.get("player").get("file") == uri:
             self.state.update("player", art=path)
 
@@ -184,17 +174,28 @@ class Music:
         names = {s["albumartist"] for s in self.songs}
         return sorted(names, key=sort_key)
 
+    def _lyric_files(self, uri):
+        """The .lrc, then the .txt, named like the song. Names are compared the way they
+        read: Song.LRC belongs to song.mp3, and so does a name typed on a Mac, which
+        stores Hangul and accents taken apart."""
+        folder, name = os.path.split(os.path.splitext(os.path.join(self.music_dir, uri))[0])
+        try:
+            names = {_fold(n): n for n in os.listdir(folder)}
+        except OSError:
+            return []
+        return [os.path.join(folder, names[key]) for key in (_fold(name + ext) for ext in LYRIC_EXTS)
+                if key in names]
+
     async def lyrics(self):
         """(lines, times or None) for the song playing: an .lrc or .txt beside the file first,
         then lyrics tags MPD can read. None when there are none."""
         uri = self.state.get("player").get("file") or ""
-        if not uri or uri.startswith(STREAM_PREFIXES):
+        if not uri:
             return None
-        base = os.path.splitext(os.path.join(self.music_dir, uri))[0]
-        for ext in (".lrc", ".txt"):
+        for path in self._lyric_files(uri):
             try:
-                with open(base + ext, encoding="utf-8-sig", errors="replace") as f:
-                    found = parse_lrc(f.read())
+                with open(path, "rb") as f:
+                    found = parse_lrc(decode(f.read()))
                 if found:
                     return found
             except OSError:
@@ -267,7 +268,6 @@ class Music:
     async def play_songs(self, songs, index=0):
         if not songs:
             return
-        self.station = None
         cmds = [("clear",), ("random", "0")] + [("add", s["file"]) for s in songs]
         cmds.append(("play", str(max(0, min(index, len(songs) - 1)))))
         await self.mpd.call_list(cmds)
@@ -276,41 +276,6 @@ class Music:
         songs = list(self.songs)
         random.shuffle(songs)
         await self.play_songs(songs, 0)
-
-    async def play_stream(self, station):
-        """Show the station at once; MPD stays silent while the stream connects."""
-        self.station = station
-        url = station["url"]
-        self.state.update("player", state="play", kind="radio", file=url, buffering=True,
-                          title=station.get("name") or url, artist="", album="", art=station.get("art"),
-                          elapsed=0.0, duration=0.0, pos=1, count=1)
-        if self._stream_watch:
-            self._stream_watch.cancel()
-        await self.mpd.call_list([("clear",), ("add", url), ("play", "0")])
-        self._stream_watch = spawn(self._watch_stream(url))
-
-    async def _watch_stream(self, url, timeout=20):
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            await asyncio.sleep(0.5)
-            if self.state.get("player").get("file") != url:
-                return
-            try:
-                status = await self._status()
-            except MPDError:
-                return
-            if status.get("error"):
-                break
-            if status.get("audio") or status.get("state") != "play":
-                await self.refresh()
-                return
-        log.warning("station did not start: %s", url)
-        try:
-            await self.mpd.call_list([("clearerror",), ("stop",)])
-        except MPDError:
-            pass
-        self.notify(self.t("stream_failed"), "wifi")
-        await self.refresh()
 
     async def enqueue(self, song, next_up=False):
         if next_up:
@@ -352,8 +317,6 @@ class Music:
             await self.mpd.call("previous")
 
     async def seek(self, delta):
-        if self.state.get("player")["kind"] == "radio":
-            return
         await self.mpd.call("seekcur", f"{delta:+d}")
 
     async def set_shuffle(self, on):

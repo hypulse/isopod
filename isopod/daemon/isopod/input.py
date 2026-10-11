@@ -8,7 +8,6 @@ from .util import spawn
 log = logging.getLogger("isopod.input")
 
 BTN_SOUTH, BTN_EAST, BTN_NORTH, BTN_WEST = 0x130, 0x131, 0x133, 0x134
-BTN_TL, BTN_TR, BTN_TL2, BTN_TR2 = 0x136, 0x137, 0x138, 0x139
 BTN_SELECT, BTN_START, BTN_MODE = 0x13A, 0x13B, 0x13C
 BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT = 0x220, 0x221, 0x222, 0x223
 KEY_ESC, KEY_BACKSPACE, KEY_ENTER, KEY_SPACE = 1, 14, 28, 57
@@ -19,11 +18,11 @@ KEY_REWIND, KEY_PLAYCD, KEY_PAUSECD, KEY_FASTFORWARD = 168, 200, 201, 208
 SW_LID, SW_HEADPHONE_INSERT = 0x00, 0x02
 
 # Nintendo-style face buttons on the RG35XX: A is east (confirm), B is south (back).
+# The four shoulder buttons do nothing.
 BUTTONS = {
     BTN_DPAD_UP: "up", BTN_DPAD_DOWN: "down", BTN_DPAD_LEFT: "left", BTN_DPAD_RIGHT: "right",
     BTN_EAST: "confirm", BTN_SOUTH: "back", BTN_NORTH: "more", BTN_WEST: "now",
-    BTN_START: "play", BTN_SELECT: "control", BTN_TL: "prev", BTN_TR: "next",
-    BTN_TL2: "pageup", BTN_TR2: "pagedown", BTN_MODE: "home",
+    BTN_START: "play", BTN_SELECT: "control", BTN_MODE: "home",
     KEY_UP: "up", KEY_DOWN: "down", KEY_LEFT: "left", KEY_RIGHT: "right",
     KEY_ENTER: "confirm", KEY_ESC: "back", KEY_BACKSPACE: "back", KEY_SPACE: "play",
 }
@@ -32,7 +31,7 @@ MEDIA = {
     KEY_NEXTSONG: "next", KEY_PREVIOUSSONG: "prev", KEY_FASTFORWARD: "forward", KEY_REWIND: "rewind",
 }
 VOLUME = {KEY_VOLUMEUP: 1, KEY_VOLUMEDOWN: -1}
-REPEATING = {"up", "down", "left", "right", "pageup", "pagedown"}
+REPEATING = {"up", "down", "left", "right"}
 
 
 def classify(dev):

@@ -5,6 +5,7 @@ wait 800
 hold down 3
 key confirm
 wait 1200
+key down
 key confirm
 wait 1200
 key confirm
@@ -24,7 +25,7 @@ wait 800
 hold down 3
 key confirm
 wait 1200
-hold down 3
+hold down 4
 key confirm
 wait 1200
 key down

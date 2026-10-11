@@ -145,8 +145,6 @@ static int accessory_of(const char *s)
         return ACC_SPINNER;
     if (!strcmp(s, "playing"))
         return ACC_PLAYING;
-    if (!strcmp(s, "star"))
-        return ACC_STAR;
     return ACC_NONE;
 }
 
@@ -358,7 +356,7 @@ static void close_overlay(void)
 static bool reload_on_return(Page *p)
 {
     return p && (!strcmp(p->path, "/") || !SDL_strncmp(p->path, "/settings", 9) ||
-                 !strcmp(p->path, "/radio") || !strcmp(p->path, "/music/queue"));
+                 !strcmp(p->path, "/music/queue"));
 }
 
 void nav_pop(void)
@@ -572,9 +570,10 @@ static void volume(int delta)
     ipc_request(req, NULL, NULL);
 }
 
+/* A press at either end of a list goes around to the other; a held button stops there. */
 static void move_sel(Page *p, int delta, bool repeat)
 {
-    if (!p->count)
+    if (!p->count || !delta)
         return;
     int i = p->sel;
     int step = delta > 0 ? 1 : -1;
@@ -585,6 +584,13 @@ static void move_sel(Page *p, int delta, bool repeat)
         if (!selectable(p, j))
             break;
         i = j;
+    }
+    if (i == p->sel && !repeat) {
+        int j = step > 0 ? 0 : p->count - 1;
+        while (j >= 0 && j < p->count && !selectable(p, j))
+            j += step;
+        if (selectable(p, j))
+            i = j;
     }
     if (i == p->sel)
         return;
@@ -631,15 +637,10 @@ static void activate(Page *p)
 
 static void list_key(Page *p, const char *key, bool repeat)
 {
-    int page_rows = viewport_h(p) / ROW_H - 1;
     if (!strcmp(key, "up"))
         move_sel(p, -1, repeat);
     else if (!strcmp(key, "down"))
         move_sel(p, 1, repeat);
-    else if (!strcmp(key, "pageup"))
-        move_sel(p, -page_rows, repeat);
-    else if (!strcmp(key, "pagedown"))
-        move_sel(p, page_rows, repeat);
     else if (!strcmp(key, "left"))
         jump_letter(p, -1);
     else if (!strcmp(key, "right"))
@@ -675,8 +676,8 @@ static void slider_key(Page *p, const char *key)
     ipc_request(req, NULL, NULL);
 }
 
-/* Cover Flow: left and right glide through albums, L2/R2 skip five, A flips the album
- * over to its songs and B flips it back. */
+/* Cover Flow: left and right glide through albums, A flips the album over to its songs
+ * and B flips it back. */
 static void open_card(Page *p)
 {
     Item *it = &p->items[p->sel];
@@ -708,8 +709,7 @@ static void coverflow_key(Page *p, const char *key, bool repeat)
         }
         return;
     }
-    int step = !strcmp(key, "left") ? -1 : !strcmp(key, "right") ? 1
-             : !strcmp(key, "pageup") ? -5 : !strcmp(key, "pagedown") ? 5 : 0;
+    int step = !strcmp(key, "left") ? -1 : !strcmp(key, "right") ? 1 : 0;
     if (step && p->count) {
         int s = p->sel + step;
         p->sel = s < 0 ? 0 : s >= p->count ? p->count - 1 : s;
@@ -738,13 +738,17 @@ static void nowplaying_key(const char *key, bool repeat)
         nav_pop();
 }
 
-static void sheet_key(const char *key)
+static void sheet_key(const char *key, bool repeat)
 {
     Sheet *s = &app.sheet;
     if (!strcmp(key, "up") && s->sel > 0)
         s->sel--;
+    else if (!strcmp(key, "up") && !repeat && s->count)
+        s->sel = s->count - 1;
     else if (!strcmp(key, "down") && s->sel < s->count - 1)
         s->sel++;
+    else if (!strcmp(key, "down") && !repeat)
+        s->sel = 0;
     else if (!strcmp(key, "back")) {
         s->active = false;
     } else if (!strcmp(key, "confirm")) {
@@ -775,18 +779,32 @@ static void kb_submit(Keyboard *k)
     resolve(k->token, k->text);
 }
 
-static void keyboard_key(const char *key)
+/* Like a list, the keys go around: a press at an edge lands on the opposite one. */
+static void keyboard_key(const char *key, bool repeat)
 {
     Keyboard *k = &app.keyboard;
-    if (!strcmp(key, "up") && k->row > 0)
-        k->row--;
-    else if (!strcmp(key, "down") && k->row < 3)
-        k->row++;
-    else if (!strcmp(key, "left") && k->col > 0)
-        k->col--;
-    else if (!strcmp(key, "right") && k->col < kb_row_len(k->row) - 1)
-        k->col++;
-    else if (!strcmp(key, "back")) {
+    int last_col = kb_row_len(k->row) - 1;
+    if (!strcmp(key, "up")) {
+        if (k->row > 0)
+            k->row--;
+        else if (!repeat)
+            k->row = 3;
+    } else if (!strcmp(key, "down")) {
+        if (k->row < 3)
+            k->row++;
+        else if (!repeat)
+            k->row = 0;
+    } else if (!strcmp(key, "left")) {
+        if (k->col > 0)
+            k->col--;
+        else if (!repeat)
+            k->col = last_col;
+    } else if (!strcmp(key, "right")) {
+        if (k->col < last_col)
+            k->col++;
+        else if (!repeat)
+            k->col = 0;
+    } else if (!strcmp(key, "back")) {
         if (k->text[0])
             kb_backspace(k);
         else
@@ -839,17 +857,13 @@ void nav_key(const char *key, bool repeat)
         return;
     }
     if (app.keyboard.active) {
-        keyboard_key(key);
+        keyboard_key(key, repeat);
     } else if (app.confirm.active) {
         confirm_key(key);
     } else if (app.sheet.active) {
-        sheet_key(key);
+        sheet_key(key, repeat);
     } else if (!strcmp(key, "play") && !repeat) {
         player("toggle", 0);
-    } else if (!strcmp(key, "prev") && !repeat) {
-        player("prev", 0);
-    } else if (!strcmp(key, "next") && !repeat) {
-        player("next", 0);
     } else if (!strcmp(key, "control") && !repeat) {
         if (app.overlay) {
             close_overlay();
@@ -911,10 +925,6 @@ void status_update(cJSON *state)
             SDL_strlcpy(p->state, v, sizeof(p->state));
             SDL_free(v);
         }
-        if ((v = json_str(pl, "kind"))) {
-            SDL_strlcpy(p->kind, v, sizeof(p->kind));
-            SDL_free(v);
-        }
         set_str(&p->title, pl, "title");
         set_str(&p->artist, pl, "artist");
         set_str(&p->album, pl, "album");
@@ -928,7 +938,6 @@ void status_update(cJSON *state)
         p->shuffle = json_bool(pl, "shuffle");
         p->repeat = json_bool(pl, "repeat");
         p->single = json_bool(pl, "single");
-        p->buffering = json_bool(pl, "buffering");
     }
     cJSON *vol = cJSON_GetObjectItemCaseSensitive(state, "volume");
     if (vol) {

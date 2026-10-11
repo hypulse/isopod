@@ -8,6 +8,7 @@ import sys
 from PIL import Image, ImageDraw, ImageFont
 
 FONT = os.environ.get("ISOPOD_BOLD_FONT", "/usr/share/fonts/pretendard/Pretendard-Bold.otf")
+CJK_FONT = "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"
 
 ALBUMS = [
     ("Aurora Lane", "Night Drive", 2024, "Synthpop", ((24, 18, 76), (214, 58, 140)), "sun",
@@ -24,6 +25,16 @@ ALBUMS = [
      [("Lighthouse", 238), ("Harbor Song", 260), ("Driftwood", 224)]),
     ("윤슬", "물결", 2024, "Ballad", ((180, 214, 240), (40, 96, 176)), "waves",
      [("물결", 245), ("너에게", 230)]),
+    ("水無月", "夜の散歩", 2023, "J-Pop", ((20, 24, 60), (120, 80, 150)), "moon",
+     [("明日を待っている", 240), ("海辺のカフェ", 215)]),
+    ("林晚", "晚安，城市", 2022, "Mandopop", ((40, 20, 30), (200, 110, 90)), "city",
+     [("月光下", 231)]),
+]
+# Songs from three albums left side by side in one folder, the way a card gets filled by hand.
+LOOSE = [
+    ("Tin Roof", "Rainwater", 2020, "Folk", ((60, 90, 110), (160, 190, 200)), "waves", "Rainwater", 204),
+    ("Kite Club", "Up There", 2021, "Indie Pop", ((250, 200, 90), (240, 120, 80)), "plane", "Up There", 188),
+    ("Low Tide", "Ebb", 2018, "Ambient", ((14, 40, 60), (40, 110, 130)), "ring", "Ebb", 301),
 ]
 
 
@@ -78,8 +89,9 @@ def cover(path, colors, motif, title, artist):
             y = 280 + i * 42
             pts = [(x, y + 18 * math.sin(x / 55 + i)) for x in range(0, size + 20, 20)]
             d.line(pts, fill=(255, 255, 255, 170 - i * 18), width=8)
-    font = ImageFont.truetype(FONT, 46)
-    small = ImageFont.truetype(FONT, 28)
+    han = any("\u2e80" <= ch < "\uac00" for ch in title + artist) and os.path.exists(CJK_FONT)
+    font = ImageFont.truetype(CJK_FONT if han else FONT, 46)
+    small = ImageFont.truetype(CJK_FONT if han else FONT, 28)
     d.text((40, 36), title, font=font, fill=(255, 255, 255, 235))
     d.text((42, 92), artist, font=small, fill=(255, 255, 255, 200))
     img.save(path, quality=92)
@@ -124,6 +136,23 @@ def write_lyrics(folder, artist, album, n, title):
             f.write(plain)
 
 
+def encode(out, art, seconds, title, artist, album, year, genre, track):
+    """A silent MP3 with its tags and its cover inside."""
+    if os.path.exists(out):
+        return
+    subprocess.run([
+        "ffmpeg", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-t", str(seconds), "-i", "anullsrc=r=22050:cl=mono",
+        "-i", art, "-map", "0:a", "-map", "1:v",
+        "-c:a", "libmp3lame", "-b:a", "16k", "-c:v", "copy", "-disposition:v", "attached_pic",
+        "-id3v2_version", "3",
+        "-metadata", f"title={title}", "-metadata", f"artist={artist}",
+        "-metadata", f"album_artist={artist}", "-metadata", f"album={album}",
+        "-metadata", f"date={year}", "-metadata", f"genre={genre}",
+        "-metadata", f"track={track}", out,
+    ], check=True)
+
+
 def main(root):
     music = os.path.join(root, "music")
     os.makedirs(music, exist_ok=True)
@@ -134,20 +163,15 @@ def main(root):
         cover(art, colors, motif, album, artist)
         for n, (title, seconds) in enumerate(tracks, 1):
             write_lyrics(folder, artist, album, n, title)
-            out = os.path.join(folder, f"{n:02d} {title}.mp3")
-            if os.path.exists(out):
-                continue
-            subprocess.run([
-                "ffmpeg", "-loglevel", "error", "-y",
-                "-f", "lavfi", "-t", str(seconds), "-i", "anullsrc=r=22050:cl=mono",
-                "-i", art, "-map", "0:a", "-map", "1:v",
-                "-c:a", "libmp3lame", "-b:a", "16k", "-c:v", "copy", "-disposition:v", "attached_pic",
-                "-id3v2_version", "3",
-                "-metadata", f"title={title}", "-metadata", f"artist={artist}",
-                "-metadata", f"album_artist={artist}", "-metadata", f"album={album}",
-                "-metadata", f"date={year}", "-metadata", f"genre={genre}",
-                "-metadata", f"track={n}/{len(tracks)}", out,
-            ], check=True)
+            encode(os.path.join(folder, f"{n:02d} {title}.mp3"), art, seconds, title, artist, album, year,
+                   genre, f"{n}/{len(tracks)}")
+    loose = os.path.join(music, "Loose")
+    os.makedirs(loose, exist_ok=True)
+    for artist, album, year, genre, colors, motif, title, seconds in LOOSE:
+        art = os.path.join(root, "loose-cover.jpg")
+        cover(art, colors, motif, album, artist)
+        encode(os.path.join(loose, f"{title}.mp3"), art, seconds, title, artist, album, year, genre, "1/1")
+        os.remove(art)
     playlists = os.path.join(root, "playlists")
     os.makedirs(playlists, exist_ok=True)
     with open(os.path.join(playlists, "드라이브.m3u"), "w") as f:
@@ -161,16 +185,6 @@ def main(root):
     os.makedirs(os.path.join(videos, "Concerts"), exist_ok=True)
     for name in ("Big Buck Bunny.mp4", "Sintel.mkv", "Tears of Steel.mp4", "Concerts/Live at Han River.mp4"):
         open(os.path.join(videos, name), "a").close()
-    books = os.path.join(root, "books")
-    for d in ("Classics", "데미안.sdr"):
-        os.makedirs(os.path.join(books, d), exist_ok=True)
-    for name in ("데미안.epub", "The Little Prince.pdf", "어린 왕자.epub", "Field Notes.cbz",
-                 "Classics/Pride and Prejudice.epub", "Classics/Moby-Dick.fb2.zip"):
-        open(os.path.join(books, name), "a").close()
-    ports = os.path.join(root, "ports")
-    os.makedirs(ports, exist_ok=True)
-    for name in ("Cave Story.sh", "Celeste Classic.sh", "PortMaster.sh"):
-        open(os.path.join(ports, name), "a").close()
 
 
 if __name__ == "__main__":

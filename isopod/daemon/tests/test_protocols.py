@@ -1,6 +1,5 @@
 import asyncio
 import dataclasses
-import json
 import os
 import sys
 import tempfile
@@ -14,18 +13,14 @@ from isopod.battery import Battery  # noqa: E402
 from isopod.bluetooth import A2DP_SINK, Backend, Bluetooth, Device, RavelBackend  # noqa: E402
 from isopod.mpd import MPD, filter_expr, quote, records, values  # noqa: E402
 from isopod.music import Music  # noqa: E402
-from isopod.pages import BOOK_EXTS, folder_listing  # noqa: E402
+from isopod.pages import VIDEO_EXTS, folder_listing  # noqa: E402
 from isopod.apps import AppSpec, Apps  # noqa: E402
-from isopod import news  # noqa: E402
-from isopod.ebook import (Glossary, annotate_epub, annotate_html, base_forms, follow_position,  # noqa: E402
-                         settle_position, sidecar, write_epub)
 from isopod.i18n import Translator  # noqa: E402
-from isopod.lyrics import parse_lrc  # noqa: E402
+from isopod.lyrics import decode, parse_lrc  # noqa: E402
 from isopod.power import Power  # noqa: E402
 from isopod.settings import Settings  # noqa: E402
 from isopod.state import State  # noqa: E402
-from isopod.radio import Radio, SongLog, station_from_api  # noqa: E402
-from isopod.transfer import Transfer, safe_parts  # noqa: E402
+from isopod.system import System  # noqa: E402
 from isopod.util import enc, fmt_duration, index_letter, matches, sort_key, spawn, split_path  # noqa: E402
 from isopod.wifi import parse_terse  # noqa: E402
 
@@ -142,7 +137,7 @@ class SpawnTest(unittest.IsolatedAsyncioTestCase):
 
 class CoverFlowOrderTest(unittest.IsolatedAsyncioTestCase):
     async def test_albums_by_artist_then_album(self):
-        music = Music(None, State(lambda snap: None), Translator("en"), tempfile.mkdtemp())
+        music = Music(None, State(lambda snap: None), tempfile.mkdtemp())
         rows = [("The Owls", "Quiet Hours"), ("Aurora Lane", "Paper Planes"), ("Aurora Lane", "Night Drive"),
                 ("나무", "가을")]
         music.songs = [{"albumartist": a, "album": b, "genre": "", "file": f"{a}/{b}/1.mp3"} for a, b in rows]
@@ -151,16 +146,34 @@ class CoverFlowOrderTest(unittest.IsolatedAsyncioTestCase):
                                  ("The Owls", "Quiet Hours"), ("나무", "가을")])
 
 
+class CoverArtTest(unittest.IsolatedAsyncioTestCase):
+    async def test_songs_sharing_a_folder_keep_their_own_album_covers(self):
+        class Pictures:
+            async def picture(self, uri):
+                return uri.encode(), "image/jpeg"
+
+        music = Music(Pictures(), State(lambda snap: None), tempfile.mkdtemp())
+        music.songs = [{"file": "01 Girls & Boys.mp3", "albumartist": "Blur", "album": "Parklife"},
+                       {"file": "04 Parklife.mp3", "albumartist": "Blur", "album": "Parklife"},
+                       {"file": "06 ROBOTMAN.mp3", "albumartist": "Someone", "album": "Else"},
+                       {"file": "untagged.mp3", "albumartist": "", "album": ""},
+                       {"file": "untagged too.mp3", "albumartist": "", "album": ""}]
+        music._by_file = {s["file"]: s for s in music.songs}
+        covers = [await music.art_path(s["file"]) for s in music.songs]
+        self.assertEqual(covers[0], covers[1], "one cover for an album")
+        self.assertEqual(len(set(covers)), 4, "and never one cover for a whole folder")
+
+
 class FolderListingTest(unittest.TestCase):
-    def test_books_hide_sidecars_and_sort_by_title(self):
+    def test_videos_hide_dot_names_and_sort_by_title(self):
         d = tempfile.mkdtemp()
-        for sub in ("Classics", "데미안.sdr", ".hidden"):
+        for sub in ("Trips", ".hidden"):
             os.makedirs(os.path.join(d, sub))
-        for name in ("The Road.epub", "notes.xyz", "데미안.epub", "Arc.fb2.zip"):
+        for name in ("The Road.mkv", "notes.xyz", "데미안.mp4", "Arc.webm"):
             open(os.path.join(d, name), "w").close()
-        dirs, files = folder_listing(d, BOOK_EXTS)
-        self.assertEqual(dirs, ["Classics"])
-        self.assertEqual(files, ["Arc.fb2.zip", "The Road.epub", "데미안.epub"])
+        dirs, files = folder_listing(d, VIDEO_EXTS)
+        self.assertEqual(dirs, ["Trips"])
+        self.assertEqual(files, ["Arc.webm", "The Road.mkv", "데미안.mp4"])
 
 
 class BatteryWarningTest(unittest.TestCase):
@@ -173,60 +186,6 @@ class BatteryWarningTest(unittest.TestCase):
         b._warn(50, charging=True)
         b._warn(19, charging=False)
         self.assertEqual(said[-1], 19)
-
-
-class FakeTransferApp:
-    def __init__(self, root):
-        self.t = Translator("en")
-        self.paths = {k: os.path.join(root, k) for k in ("music", "videos", "books")}
-        self.changed = []
-        self.power = type("P", (), {"activity": lambda self: None})()
-        self.music = type("M", (), {"update_library": staticmethod(lambda: asyncio.sleep(0))})()
-
-    def page_changed(self, *paths):
-        self.changed.extend(paths)
-
-
-class TransferTest(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        self.root = tempfile.mkdtemp()
-        self.app = FakeTransferApp(self.root)
-        self.tr = Transfer(self.app, (".mp4",), (".epub",), ports=(0,))
-        self.assertTrue(await self.tr.start())
-
-    async def asyncTearDown(self):
-        self.tr.stop()
-
-    async def request(self, method, path, body=b"", code=None):
-        reader, writer = await asyncio.open_connection("127.0.0.1", self.tr.port)
-        head = f"{method} {path} HTTP/1.1\r\nHost: x\r\nContent-Length: {len(body)}\r\n"
-        if code is not None:
-            head += f"X-Isopod-Code: {code}\r\n"
-        writer.write(head.encode() + b"\r\n" + body)
-        await writer.drain()
-        data = await reader.read()
-        writer.close()
-        return int(data.split(b" ", 2)[1]), data.split(b"\r\n\r\n", 1)[1]
-
-    async def test_page_and_uploads(self):
-        status, body = await self.request("GET", "/")
-        self.assertEqual(status, 200)
-        self.assertIn("Add Files to isoPod".encode(), body)
-        self.assertEqual((await self.request("PUT", "/upload/a.mp3", b"x", code="nope"))[0], 403)
-        status, _ = await self.request("PUT", "/upload/Album%20One/01.mp3", b"abc", code=self.tr.code)
-        self.assertEqual(status, 201)
-        with open(os.path.join(self.root, "music", "Album One", "01.mp3"), "rb") as f:
-            self.assertEqual(f.read(), b"abc")
-        self.assertEqual((await self.request("PUT", "/upload/b.epub", b"e", code=self.tr.code))[0], 201)
-        self.assertTrue(os.path.exists(os.path.join(self.root, "books", "b.epub")))
-        self.assertEqual((await self.request("PUT", "/upload/x.exe", b"e", code=self.tr.code))[0], 415)
-        self.assertEqual((await self.request("PUT", "/upload/..%2Fescape.mp3", b"e", code=self.tr.code))[0], 400)
-        self.assertEqual(self.tr.received, 2)
-
-    def test_safe_parts(self):
-        self.assertEqual(safe_parts("a/b%20c/d.mp3"), ["a", "b c", "d.mp3"])
-        self.assertIsNone(safe_parts("../x.mp3"))
-        self.assertIsNone(safe_parts(".hidden/x.mp3"))
 
 
 class FakeEvents:
@@ -321,132 +280,6 @@ class AppsTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("b", self.apps.running, "the app used longest ago closes first")
 
 
-class WordWiseTest(unittest.TestCase):
-    def glossary(self):
-        d = tempfile.mkdtemp()
-        with open(os.path.join(d, "g.tsv"), "w") as f:
-            f.write("ubiquitous\tpresent everywhere\t34\nscrutinize\tlook at closely\t28\n"
-                    "reluctant\tunwilling\t38\nwhisper\t<speak> softly\t30\n")
-        return Glossary(os.path.join(d, "g.tsv"))
-
-    def test_base_forms_find_the_headword(self):
-        self.assertIn("scrutinize", base_forms("scrutinized"))
-        self.assertIn("scrutinize", base_forms("scrutinizing"))
-        self.assertIn("study", base_forms("studies"))
-
-    def test_hints_once_outside_skipped_tags(self):
-        g = self.glossary()
-        doc = ("<html><head><title>ubiquitous</title></head><body><h1>ubiquitous</h1>"
-               "<p>Phones are ubiquitous; so ubiquitous that we scrutinized them. "
-               "A reluctant Reader. <a href='#'>whisper</a> whispering &nbsp;</p></body></html>")
-        out = annotate_html(doc, g, 35, set())
-        self.assertIn("<title>ubiquitous</title>", out)
-        self.assertIn("<h1>ubiquitous</h1>", out)
-        self.assertEqual(out.count("<rt>present everywhere</rt>"), 1)
-        self.assertIn("<ruby>scrutinized<rt>look at closely</rt></ruby>", out)
-        self.assertNotIn("unwilling", out, "common enough words stay bare")
-        self.assertIn("<a href='#'>whisper</a>", out)
-        self.assertIn("<ruby>whispering<rt>&lt;speak&gt; softly</rt></ruby>", out)
-        self.assertIn("&nbsp;", out)
-
-    def test_compounds_and_sentence_starts(self):
-        out = annotate_html("<p>Scrutinize it. A torn ubiquitous-looking pocket.</p>", self.glossary(), 35, set())
-        self.assertIn("<ruby>Scrutinize<rt>look at closely</rt></ruby> it", out)
-        self.assertIn("<ruby>ubiquitous<rt>present everywhere</rt></ruby>-looking", out)
-
-    def test_epub_round_trip(self):
-        d = tempfile.mkdtemp()
-        src, dst = os.path.join(d, "a.epub"), os.path.join(d, "ww", "a.epub")
-        write_epub(src, "Test", [("One", "<p>It is ubiquitous.</p>")], lang="en")
-        self.assertEqual(annotate_epub(src, dst, self.glossary()), 1)
-        import zipfile
-        with zipfile.ZipFile(dst) as z:
-            self.assertEqual(z.namelist()[0], "mimetype")
-            self.assertEqual(z.getinfo("mimetype").compress_type, zipfile.ZIP_STORED)
-            page = z.read("OEBPS/c0.xhtml").decode()
-            self.assertIn("<ruby>ubiquitous", page)
-            self.assertIn("<style>rt {", page)
-
-    def test_position_follows_the_version_read_last(self):
-        d = tempfile.mkdtemp()
-        book, copy = os.path.join(d, "Book.epub"), os.path.join(d, "ww", "Book.epub")
-        os.makedirs(os.path.dirname(sidecar(book)))
-        with open(sidecar(book), "w") as f:
-            f.write('return {\n    ["copt_font_size"] = 26,\n    ["copt_h_page_margins"] = {\n        [1] = 15,\n'
-                    '    },\n    ["cre_dom_version"] = 20240114,\n'
-                    '    ["last_xpointer"] = "/body/DocFragment[3]/body/div/p[4]/text().117",\n'
-                    '    ["percent_finished"] = 0.25,\n}\n')
-        self.assertTrue(follow_position([book, copy], copy))
-        with open(sidecar(copy)) as f:
-            state = f.read()
-        self.assertIn('"/body/DocFragment[3]/body/div/p[4]"', state)
-        self.assertIn("20240114", state)
-        self.assertIn('["copt_block_rendering_mode"] = 3', state, "legacy layout would drop the ruby")
-        self.assertIn('["copt_font_size"] = 26', state)
-        self.assertFalse(follow_position([book, copy], copy), "already where it was read last")
-
-        with open(sidecar(copy), "w") as f:
-            f.write('return {\n    ["bookmarks"] = {},\n    ["cre_dom_version"] = 20240114,\n'
-                    '    ["last_xpointer"] = "/body/DocFragment[9]/body/p[2]/ruby[3]/text().1",\n'
-                    '    ["percent_finished"] = 0.5,\n}\n')
-        os.utime(sidecar(book), (1, 1))
-        self.assertTrue(follow_position([book, copy], book))
-        with open(sidecar(book)) as f:
-            state = f.read()
-        self.assertIn('"/body/DocFragment[9]/body/p[2]"', state)
-        self.assertIn("0.5", state)
-
-        with open(sidecar(copy), "a") as f:
-            f.write("-- rebuilt\n")
-        settle_position(copy)
-        with open(sidecar(copy)) as f:
-            self.assertIn('"/body/DocFragment[9]/body/p[2]"', f.read())
-
-
-RSS =b"""<?xml version="1.0"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
-<channel><title>T</title>
-<item><title>Long story</title><link>http://x/1</link><content:encoded><![CDATA[<p>%s</p><p>Second.</p>]]>
-</content:encoded></item>
-<item><title>Short one</title><link>http://x/2</link><description>Just a teaser.</description></item>
-</channel></rss>""" % (b"Full text. " * 60)
-
-ATOM = b"""<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><title>A</title>
-<entry><title>Atom item</title><link rel="alternate" href="http://y/1"/><summary>Short.</summary></entry></feed>"""
-
-PAGE = ("<html><body><nav><p>Menu menu menu menu menu menu menu</p></nav><div class='a'>"
-        + "".join(f"<p>Paragraph {i} of the article body, long enough to count as text.</p>" for i in range(8))
-        + "</div><footer><p>Copyright footer text that is long enough</p></footer></body></html>").encode()
-
-
-class NewsTest(unittest.TestCase):
-    def test_parse_rss_and_atom(self):
-        rss = news.parse_feed(RSS)
-        self.assertEqual([i["title"] for i in rss], ["Long story", "Short one"])
-        atom = news.parse_feed(ATOM)
-        self.assertEqual((atom[0]["title"], atom[0]["link"]), ("Atom item", "http://y/1"))
-
-    def test_article_page_extraction(self):
-        paragraphs = news.extract_article(PAGE.decode())
-        self.assertEqual(len(paragraphs), 8)
-        self.assertNotIn("Menu", " ".join(paragraphs))
-
-    def test_edition(self):
-        pages = {"http://feed": RSS, "http://x/2": PAGE}
-
-        def fetcher(url, timeout=10):
-            if url not in pages:
-                raise OSError("offline")
-            return pages[url]
-        d = tempfile.mkdtemp()
-        path = os.path.join(d, news.edition_name())
-        self.assertEqual(news.build_edition(path, "News", [("Feed", "http://feed")], fetcher=fetcher), 2)
-        import zipfile
-        with zipfile.ZipFile(path) as z:
-            second = z.read("OEBPS/c1.xhtml").decode()
-        self.assertIn("Paragraph 3 of the article body", second)
-        self.assertEqual(news.editions(d), [news.edition_name()])
-
-
 class LyricsTest(unittest.TestCase):
     def test_synced_lrc(self):
         lines, times = parse_lrc("[ar:X]\n[offset:+500]\n[00:00.00]\n[00:12.50]Two\n[00:05.00][00:30.00]One and again\n")
@@ -457,6 +290,33 @@ class LyricsTest(unittest.TestCase):
         lines, times = parse_lrc("\nFirst line\n\nSecond verse\n\n")
         self.assertEqual((lines, times), (["First line", "", "Second verse"], None))
         self.assertIsNone(parse_lrc(""))
+
+    def test_word_timing_is_left_out(self):
+        lines, times = parse_lrc("[00:01.00]<00:01.00>Two <00:01.60>words\n")
+        self.assertEqual((lines, times), (["Two words"], [1.0]))
+
+    def test_utf16_from_windows_tools(self):
+        text = "[00:01.00]가사\n"
+        for raw in (text.encode("utf-16"), b"\xef\xbb\xbf" + text.encode(), text.encode()):
+            self.assertEqual(parse_lrc(decode(raw)), (["가사"], [1.0]))
+
+    async def lyrics_beside(self, song, *names):
+        d = tempfile.mkdtemp()
+        for name in names:
+            with open(os.path.join(d, name), "w", encoding="utf-8") as f:
+                f.write("[00:01.00]" + name + "\n")
+        state = State(lambda snap: None)
+        state.data["player"]["file"] = song
+        found = await Music(None, state, d, music_dir=d).lyrics()
+        return found and found[0]
+
+    def test_the_file_named_like_the_song(self):
+        import unicodedata
+        run = asyncio.run
+        self.assertEqual(run(self.lyrics_beside("a.mp3", "a.lrc", "a.txt", "b.lrc")), ["a.lrc"])
+        self.assertEqual(run(self.lyrics_beside("Song.mp3", "song.LRC")), ["song.LRC"])
+        typed_on_a_mac = unicodedata.normalize("NFD", "한강.lrc")
+        self.assertEqual(run(self.lyrics_beside("한강.mp3", typed_on_a_mac)), [typed_on_a_mac])
 
 
 class WifiParsingTest(unittest.TestCase):
@@ -676,140 +536,6 @@ class RoutesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.fake.routes["headphones"]["level"], 55)
 
 
-class RadioTest(unittest.IsolatedAsyncioTestCase):
-    async def test_parse_dedupe_and_favorites(self):
-        payload = json.dumps([
-            {"stationuuid": "1", "name": "KBS Cool FM", "url_resolved": "http://a", "tags": "pop,korean,kbs",
-             "codec": "AAC", "bitrate": 128, "countrycode": "KR"},
-            {"stationuuid": "1", "name": "dup", "url_resolved": "http://a"},
-            {"stationuuid": "2", "name": "", "url": "http://b"},
-        ]).encode()
-        calls = []
-
-        def fetch(url):
-            calls.append(url)
-            return payload
-        d = tempfile.mkdtemp()
-        radio = Radio(d, d, fetch=fetch)
-        stations = await radio.top()
-        self.assertEqual([s["name"] for s in stations], ["KBS Cool FM", "Radio"])
-        self.assertEqual(stations[0]["tags"], ["pop", "korean", "kbs"])
-        await radio.top()
-        self.assertEqual(len(calls), 1, "second call should come from cache")
-        self.assertTrue(radio.toggle_favorite(stations[0]))
-        self.assertTrue(Radio(d, d, fetch=fetch).is_favorite("1"))
-        self.assertFalse(radio.toggle_favorite(stations[0]))
-
-    def test_station_shape(self):
-        s = station_from_api({"stationuuid": "x", "name": " Jazz ", "url": "http://j", "codec": "UNKNOWN"})
-        self.assertEqual((s["name"], s["url"], s["bitrate"], s["codec"]), ("Jazz", "http://j", 0, ""))
-        hls = station_from_api({"stationuuid": "y", "url_resolved": "https://x/playlist.m3u8", "hls": 1})
-        self.assertEqual(hls["url"], "hls+https://x/playlist.m3u8")
-
-
-class OneSong:
-    """MPD with one thing in its queue."""
-
-    def __init__(self, state, **song):
-        self.status = [("state", state), ("audio", "44100:16:2"), ("song", "0"), ("playlistlength", "1")]
-        self.song = list(song.items())
-
-    async def call(self, command, *args):
-        return self.status if command == "status" else self.song
-
-    async def picture(self, uri):
-        return None
-
-
-class SongLogTest(unittest.IsolatedAsyncioTestCase):
-    """The radio's song history: what counts as heard, and what stays."""
-
-    async def asyncSetUp(self):
-        self.dir = tempfile.mkdtemp()
-        self.now = 1000
-
-    def log(self, recent=3):
-        log = SongLog(self.dir, clock=lambda: self.now)
-        log.DWELL, log.RECENT = 0.02, recent
-        return log
-
-    async def hear(self, log, title, station="Night FM"):
-        self.now += 60
-        log.playing(title, station)
-        await asyncio.sleep(0.05)
-
-    async def test_a_song_counts_once_it_has_played_a_while(self):
-        log = self.log()
-        log.playing("Aurora Lane -  Neon Coast ", "Night FM")
-        self.assertEqual(log.entries, [], "not at once: stations get passed through")
-        await asyncio.sleep(0.05)
-        self.assertEqual(log.entries, [{"title": "Aurora Lane - Neon Coast", "station": "Night FM",
-                                        "time": 1000, "saved": False}])
-
-    async def test_a_station_passed_through_leaves_nothing(self):
-        log = self.log()
-        log.playing("Song A", "One")
-        log.playing("Song B", "Two")
-        log.playing("", "Two")
-        await asyncio.sleep(0.05)
-        self.assertEqual(log.entries, [])
-
-    async def test_a_station_naming_itself_is_not_a_song(self):
-        log = self.log()
-        await self.hear(log, "NIGHT FM")
-        await self.hear(log, "   ")
-        self.assertEqual(log.entries, [])
-        self.assertIsNone(log.on_air)
-
-    async def test_a_song_heard_again_moves_to_the_top(self):
-        log = self.log()
-        for title in ("Song A", "Song B", "song a"):
-            await self.hear(log, title, "Two" if title == "song a" else "One")
-        self.assertEqual([(e["title"], e["station"], e["time"]) for e in log.entries],
-                         [("Song A", "Two", 1180), ("Song B", "One", 1120)])
-
-    async def test_saved_songs_stay_when_the_rest_roll_off(self):
-        log = self.log(recent=2)
-        await self.hear(log, "Keeper")
-        log.set_saved("Keeper", True)
-        for title in ("One", "Two", "Three"):
-            await self.hear(log, title)
-        self.assertEqual([e["title"] for e in log.saved()], ["Keeper"])
-        self.assertEqual([e["title"] for e in log.recent()], ["Three", "Two"])
-        await self.hear(log, "Keeper")
-        self.assertTrue(log.find("keeper")["saved"], "hearing it again does not unsave it")
-        log.set_saved("Keeper", False)
-        self.assertEqual([e["title"] for e in log.recent()], ["Keeper", "Three"])
-
-    async def test_saving_what_is_on_air_does_not_wait(self):
-        log = self.log()
-        log.DWELL = 60
-        log.playing("Just Started", "Night FM")
-        log.set_saved(log.on_air[0], True, log.on_air[1])
-        self.assertEqual([(e["title"], e["station"], e["saved"]) for e in log.entries],
-                         [("Just Started", "Night FM", True)])
-        log.playing("", "")
-
-    async def test_it_outlives_a_restart_and_can_be_cleared(self):
-        log = self.log()
-        await self.hear(log, "Song A")
-        log.set_saved("Song A", True)
-        again = self.log()
-        self.assertEqual([(e["title"], e["saved"]) for e in again.entries], [("Song A", True)])
-        again.remove("song a")
-        self.assertEqual(self.log().entries, [])
-
-    async def test_only_a_playing_station_is_on_air(self):
-        said = []
-        stream = {"file": "http://night.fm/live", "Name": "Night FM", "Title": "Aurora Lane - Neon Coast"}
-        for state, song in (("play", stream), ("pause", stream),
-                            ("play", {"file": "a/1.mp3", "Title": "Local", "Artist": "Someone"})):
-            music = Music(OneSong(state, **song), State(lambda snapshot: None), None, self.dir)
-            music.on_air = lambda title, station: said.append((title, station))
-            await music.refresh()
-        self.assertEqual(said, [("Aurora Lane - Neon Coast", "Night FM"), ("", "Night FM"), ("", "Local")])
-
-
 class Bluez(Backend):
     """BlueZ as far as isoPod can tell. A link comes up before anything else does, a first
     connection pairs on the way, and for headphones the stream shows last."""
@@ -912,7 +638,7 @@ class BluetoothTest(unittest.IsolatedAsyncioTestCase):
         self.events = BluetoothEvents()
         self.settings = Settings(tempfile.mkdtemp())
         self.bt = Bluetooth(self.bluez, State(lambda snapshot: None), self.settings, Translator("ko"),
-                            self.events, None)
+                            self.events, System(sim=True))
         self.bt.RETRY_DELAY, self.bt.STREAM_WAIT = 0, 0.05
         await self.bt.start()
 
@@ -1033,3 +759,28 @@ class BluezSignalsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SleepingRadioTest(unittest.IsolatedAsyncioTestCase):
+    """The RTL8821CS that did not answer at boot: no adapter until its UART driver is bound again."""
+
+    def sysfs(self, adapter):
+        root = tempfile.mkdtemp()
+        driver = os.path.join(root, "bus/serial/drivers/hci_uart_h5")
+        os.makedirs(driver)
+        os.makedirs(os.path.join(root, "class/bluetooth", "hci0" if adapter else ""))
+        os.symlink("/dev/null", os.path.join(driver, "serial0-0"))
+        os.symlink("/dev/null", os.path.join(driver, "module"))
+        return root, driver
+
+    async def test_no_adapter_binds_the_driver_again(self):
+        root, driver = self.sysfs(adapter=False)
+        await System(sysfs=root).wake_bluetooth(wait=0)
+        for step in ("unbind", "bind"):
+            with open(os.path.join(driver, step)) as f:
+                self.assertEqual(f.read(), "serial0-0")
+
+    async def test_an_adapter_that_is_there_is_left_alone(self):
+        root, driver = self.sysfs(adapter=True)
+        await System(sysfs=root).wake_bluetooth(wait=0)
+        self.assertFalse(os.path.exists(os.path.join(driver, "unbind")))
