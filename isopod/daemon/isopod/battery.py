@@ -71,9 +71,9 @@ class Battery:
         self.state.update("battery", percent=value, charging=charging)
         self._warn(value, charging)
 
-    def simulate(self, percent):
-        self.state.update("battery", percent=percent, charging=False)
-        self._warn(percent, False)
+    def simulate(self, percent, charging=False):
+        self.state.update("battery", percent=percent, charging=charging)
+        self._warn(percent, charging)
 
     def _warn(self, percent, charging):
         """Say so once as the charge crosses each warning level on the way down."""

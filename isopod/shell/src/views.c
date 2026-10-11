@@ -1,6 +1,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "shell.h"
 
@@ -378,16 +379,50 @@ static void draw_bar(const char *title, Uint8 alpha, const char *old_title, Uint
     if (title)
         draw_text_center(FONT_SEMIBOLD, FONT_BAR, title, SCREEN_W / 2, 8, RGBA(ink.r, ink.g, ink.b, alpha), 340);
 
-    Player *pl = &app.status.player;
-    if (!strcmp(pl->state, "play"))
+    Status *st = &app.status;
+    if (!strcmp(st->player.state, "play"))
         draw_icon("play", 18, 13, glyph);
-    else if (!strcmp(pl->state, "pause"))
+    else if (!strcmp(st->player.state, "pause"))
         draw_icon("pause", 18, 13, glyph);
 
-    int bx = SCREEN_W - 18 - 38;
-    draw_battery(bx, 13, app.status.battery, app.status.charging, glyph);
-    if (app.status.bt_audio)
-        draw_icon("bt-headphones", bx - 34, 11, dark ? RGB(90, 170, 255) : C_ACCENT);
+    /* From the right: the battery, Wi-Fi while it is on (its bars once it has joined a
+     * network, a faint fan until then) and Bluetooth while it is on (headphones once a
+     * pair is connected). What is switched off is not drawn. */
+    int x = SCREEN_W - 18;
+    x -= draw_battery(x, 13, st->battery, st->charging, glyph) + 9;
+    if (st->wifi_on) {
+        char name[16];
+        int bars = st->wifi_signal / 25;
+        snprintf(name, sizeof(name), "wifi-%d", st->wifi_joined ? (bars > 3 ? 3 : bars) : 3);
+        draw_icon(name, x - 26, 11, st->wifi_joined ? glyph : RGBA(glyph.r, glyph.g, glyph.b, 70));
+        x -= 26 + 8;
+    }
+    if (st->bt_audio)
+        draw_icon("bt-headphones", x - 26, 11, dark ? RGB(90, 170, 255) : C_ACCENT);
+    else if (st->bt_on)
+        draw_icon("bar-bluetooth", x - 14, 11, glyph);
+}
+
+/* The home screen's title is the time, where the iPod wrote its own name. */
+static const char *bar_title(Page *p)
+{
+    static char clock[48];
+    if (!p)
+        return NULL;
+    if (strcmp(p->path, "/"))
+        return p->title;
+    time_t now = time(NULL);
+    struct tm tm;
+    localtime_r(&now, &tm);
+    char hm[16];
+    snprintf(hm, sizeof(hm), "%d:%02d", tm.tm_hour % 12 ? tm.tm_hour % 12 : 12, tm.tm_min);
+    const char *words = S(tm.tm_hour < 12 ? "clock_am" : "clock_pm", "{time}");
+    const char *slot = strstr(words, "{time}");
+    if (slot)
+        snprintf(clock, sizeof(clock), "%.*s%s%s", (int)(slot - words), words, hm, slot + 6);
+    else
+        snprintf(clock, sizeof(clock), "%s", hm);
+    return clock;
 }
 
 /* split menus: the artwork panel ------------------------------------------ */
@@ -970,14 +1005,14 @@ void render(void)
     SDL_RenderClear(app.renderer);
 
     Page *p = top();
-    const char *title = p ? p->title : "isoPod";
+    const char *title = bar_title(p);
     if (app.transition && app.leaving) {
         float t = ease_out((SDL_GetTicks() - app.transition_at) / (float)ANIM_PUSH_MS);
         int dir = app.transition;
         int off = (int)(SCREEN_W * t);
         draw_page(app.leaving, dir > 0 ? -off : off);
         draw_page(p, dir > 0 ? SCREEN_W - off : off - SCREEN_W);
-        draw_bar(title, (Uint8)(255 * t), app.leaving->title, (Uint8)(255 * (1 - t)),
+        draw_bar(title, (Uint8)(255 * t), bar_title(app.leaving), (Uint8)(255 * (1 - t)),
                  p && p->style == STYLE_COVERFLOW);
         wants_frame = true;
         if (t >= 1) {
@@ -1021,6 +1056,11 @@ int next_frame_delay(void)
     }
     if (app.keyboard.active)
         delay = delay < 0 || delay > 530 ? 530 - (int)(SDL_GetTicks() % 530) + 1 : delay;
+    if (p && !strcmp(p->path, "/")) {
+        /* the clock in the title turns over with the minute */
+        int ms = (60 - (int)(time(NULL) % 60)) * 1000 + 30;
+        delay = delay < 0 || delay > ms ? ms : delay;
+    }
     return delay;
 }
 

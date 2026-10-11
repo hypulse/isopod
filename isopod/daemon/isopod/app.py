@@ -304,15 +304,18 @@ class App:
             self.power.activity()
             return {}
         if op == "sim" and self.sim:
-            # Hardware the simulator lacks: the lid, a held power key, the battery, the jack.
+            # Hardware the simulator lacks: the lid, a held power key, the battery, the jack,
+            # a Wi-Fi network going out of reach.
             if "lid" in req:
                 await self.lid(bool(req["lid"]))
             if "power" in req:
                 await self.power.power_key(bool(req["power"]))
             if "battery" in req:
-                self.battery.simulate(int(req["battery"]))
+                self.battery.simulate(int(req["battery"]), bool(req.get("charging")))
             if "jack" in req:
                 self.jack(bool(req["jack"]))
+            if "wifi" in req:
+                await self.wifi.backend.reach(req["wifi"])
             return {}
         raise ValueError(f"unknown op {op}")
 

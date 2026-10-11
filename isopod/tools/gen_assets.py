@@ -185,6 +185,10 @@ def build(out):
     headphones(d, 1, -1, 0.6, 3.6)
     done(img, 26, 22, P("bt-headphones"))
 
+    img, d = canvas(14, 22)
+    line(d, [(2.5, 6.5), (11.5, 15.5), (7, 20), (7, 2), (11.5, 6.5), (2.5, 15.5)], 2)
+    done(img, 14, 22, P("bar-bluetooth"))
+
     img, d = canvas(22, 20)
     speaker_body(d, 0, 0, 0.5)
     arc(d, 11, 10, 5, -50, 50, 1.8)

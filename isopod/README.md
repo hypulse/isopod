@@ -45,6 +45,11 @@ with their reflections, each side turned to face the middle; press A and the alb
 over to show its songs. Artwork stays square, as the covers are, and type is set in
 Pretendard; names it cannot write, Japanese and Chinese among them, are set in Noto Sans CJK.
 
+The title bar carries the time on the home screen, where the iPod wrote its name, and on
+its right the battery (green with a bolt while it charges, red when low), Wi-Fi while it
+is on (its bars once a network is joined, a faint fan until then) and Bluetooth while it
+is on (headphones once a pair is connected). What is switched off is not drawn.
+
 ## The rules
 
 Every screen is a list, and every list works the same way.

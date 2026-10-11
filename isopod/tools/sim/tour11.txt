@@ -1,0 +1,55 @@
+# The title bar: the time on the home screen, the battery charging and running low, Wi-Fi
+# joined, weak, out of reach and off, Bluetooth on, off and with headphones.
+wait 1500
+shot t01-home.png
+sim {"battery": 55, "charging": true}
+wait 400
+shot t02-charging.png
+sim {"battery": 12}
+wait 400
+shot t03-low.png
+sim {"battery": 78}
+sim {"wifi": "Free Seoul WiFi"}
+wait 500
+shot t04-wifi-weak.png
+sim {"wifi": ""}
+wait 500
+shot t05-wifi-not-joined.png
+sim {"wifi": "Home"}
+key down
+key down
+key confirm
+wait 500
+key confirm
+wait 500
+key up
+key confirm
+wait 700
+shot t06-wifi-off.png
+key confirm
+wait 700
+key back
+wait 400
+key down
+key confirm
+wait 600
+key confirm
+wait 700
+shot t07-bluetooth-off.png
+key confirm
+wait 900
+hold down 2
+key confirm
+wait 1600
+shot t08-headphones.png
+key home
+wait 500
+key up
+key up
+key confirm
+wait 800
+key confirm
+wait 1500
+sim {"battery": 40, "charging": true}
+wait 400
+shot t09-coverflow-dark.png

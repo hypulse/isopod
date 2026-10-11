@@ -128,6 +128,11 @@ class FakeWifi:
         await asyncio.sleep(0.8)
         await self.refresh()
 
+    async def reach(self, ssid):
+        """The network in use, by name; none when the last one went out of reach."""
+        self._active = ssid or None
+        await self.refresh()
+
     async def set_enabled(self, on):
         self.enabled = on
         if not on:
@@ -161,6 +166,7 @@ class FakeWifi:
 
 class Wifi:
     SCAN_EVERY = 15
+    SIGNAL_EVERY = 30
 
     def __init__(self, backend, state, t, events):
         self.backend = backend
@@ -173,6 +179,14 @@ class Wifi:
 
     async def start(self):
         await self.backend.start(self._publish)
+        spawn(self._follow_signal())
+
+    async def _follow_signal(self):
+        """The bars in the title bar follow the signal while there is someone to see them."""
+        while True:
+            await asyncio.sleep(self.SIGNAL_EVERY)
+            if self.backend.enabled and self.events.watching():
+                await self.backend.refresh()
 
     def _publish(self):
         active = next((n for n in self.backend.networks if n["active"]), None)

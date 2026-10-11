@@ -103,6 +103,9 @@ STRINGS = {
     "model": ("모델", "Model"),
     "software": ("소프트웨어", "Software"),
 
+    "clock_am": ("오전 {time}", "{time} AM"),
+    "clock_pm": ("오후 {time}", "{time} PM"),
+
     "cancel": ("취소", "Cancel"),
     "ok": ("확인", "OK"),
     "done": ("완료", "Done"),
@@ -126,5 +129,5 @@ class Translator:
     def shell_strings(self):
         keys = ("now_playing", "of", "nothing_playing", "cancel", "ok", "done", "space",
                 "volume", "brightness", "shuffle", "repeat", "repeat_one", "on", "off",
-                "opening", "searching", "connecting", "empty_list")
+                "opening", "searching", "connecting", "empty_list", "clock_am", "clock_pm")
         return {k: self(k) for k in keys}

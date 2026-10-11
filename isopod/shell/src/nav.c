@@ -954,8 +954,16 @@ void status_update(cJSON *state)
         s->charging = json_bool(bat, "charging");
     }
     cJSON *bt = cJSON_GetObjectItemCaseSensitive(state, "bluetooth");
-    if (bt)
+    if (bt) {
+        s->bt_on = json_bool(bt, "enabled");
         set_str(&s->bt_audio, bt, "audio");
+    }
+    cJSON *wifi = cJSON_GetObjectItemCaseSensitive(state, "wifi");
+    if (wifi) {
+        s->wifi_on = json_bool(wifi, "enabled");
+        s->wifi_joined = cJSON_IsString(cJSON_GetObjectItemCaseSensitive(wifi, "ssid"));
+        s->wifi_signal = json_int(wifi, "signal", 0);
+    }
     cJSON *scr = cJSON_GetObjectItemCaseSensitive(state, "screen");
     if (scr) {
         bool on = json_bool(scr, "on");

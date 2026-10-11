@@ -724,15 +724,19 @@ void draw_spinner(int cx, int cy, Rgba c)
     draw_icon_rot("spinner", cx - w / 2, cy - h / 2, angle, c);
 }
 
-void draw_battery(int x, int y, int percent, bool charging, Rgba outline)
+/* The charge is the colour of the bar's other glyphs, red when it runs low, and green
+ * with a bolt beside it while it charges. Returns the width drawn, bolt included. */
+int draw_battery(int right, int y, int percent, bool charging, Rgba ink)
 {
-    draw_icon("battery", x, y, outline);
+    int x = right - 38 - (charging ? 13 : 0);
+    draw_icon("battery", x, y, ink);
     int inner = (int)(26 * (percent < 0 ? 0 : percent > 100 ? 100 : percent) / 100.0 + 0.5);
-    Rgba fill = percent <= 20 && !charging ? C_RED : C_GREEN;
+    Rgba fill = charging ? C_GREEN : percent <= 20 ? C_RED : ink;
     if (inner > 0)
         fill_round(x + 4, y + 4, inner, 10, 2, fill);
     if (charging)
-        draw_icon("bolt", x + 10, y + 1, RGB(255, 204, 0));
+        draw_icon("bolt", x + 39, y + 1, ink);
+    return right - x;
 }
 
 bool save_screenshot(const char *path)

@@ -98,7 +98,10 @@ typedef struct {
     char output[16];
     int battery;
     bool charging;
+    bool bt_on;
     char *bt_audio;
+    bool wifi_on, wifi_joined;
+    int wifi_signal;
     bool screen_on;
 } Status;
 
@@ -187,7 +190,7 @@ void fill_gradient_h(int x, int y, int w, int h, Rgba left, Rgba right);
 void draw_strips(SDL_Texture *t, const SDL_FPoint *top, const SDL_FPoint *bottom, const float *u, int n,
                  float v0, float v1, SDL_Color c0, SDL_Color c1);
 void draw_spinner(int cx, int cy, Rgba tint);
-void draw_battery(int x, int y, int percent, bool charging, Rgba outline);
+int draw_battery(int right, int y, int percent, bool charging, Rgba ink);
 bool save_screenshot(const char *path);
 
 /* views.c */
