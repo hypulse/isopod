@@ -309,6 +309,16 @@ class Bluetooth:
     async def start(self):
         await self.backend.start(self._on_backend)
         self._publish()
+        spawn(self._recover())
+
+    async def _recover(self, settle=3.0):
+        """Bluetooth that was on stays on across a boot, also when its radio slept through
+        the kernel's first call and ROCKNIX found no adapter to start."""
+        if not await self.system.bluetooth_wanted():
+            return
+        await asyncio.sleep(settle)
+        if not self.system.has_bluetooth_adapter():
+            await self.set_enabled(True)
 
     def _relevant(self, kind, device, old):
         if kind == "adapter":

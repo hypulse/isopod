@@ -1,9 +1,14 @@
+import asyncio
+import logging
 import os
 import shutil
 import socket
+import time
 
 from . import __version__
 from .util import run
+
+log = logging.getLogger("isopod.system")
 
 FUNCTIONS = "/etc/profile.d/001-functions"
 
@@ -11,17 +16,61 @@ FUNCTIONS = "/etc/profile.d/001-functions"
 class System:
     """Keeps ROCKNIX's own settings in step so its suspend hooks do the right thing."""
 
-    def __init__(self, sim=False):
+    def __init__(self, sim=False, sysfs="/sys"):
         self.sim = sim
+        self.sysfs = sysfs
 
     async def rocknix_setting(self, key, value):
         if self.sim or not os.path.exists(FUNCTIONS):
             return
         await run("sh", "-c", f'. {FUNCTIONS}; set_setting "$0" "$1"', key, str(value))
 
+    async def bluetooth_wanted(self):
+        """Whether Bluetooth was on when the device last went down."""
+        if self.sim or not os.path.exists(FUNCTIONS):
+            return False
+        _, out, _ = await run("sh", "-c", f'. {FUNCTIONS}; get_setting "$0"', "controllers.bluetooth.enabled")
+        return out.strip() == "1"
+
+    def has_bluetooth_adapter(self):
+        try:
+            return any(n.startswith("hci") for n in os.listdir(os.path.join(self.sysfs, "class/bluetooth")))
+        except OSError:
+            return False
+
+    def _rebind_bluetooth_uart(self):
+        drivers = os.path.join(self.sysfs, "bus/serial/drivers")
+        try:
+            names = [d for d in os.listdir(drivers) if d.startswith("hci_uart")]
+        except OSError:
+            return
+        for driver in (os.path.join(drivers, n) for n in names):
+            for device in os.listdir(driver):
+                if device == "module" or not os.path.islink(os.path.join(driver, device)):
+                    continue
+                log.info("no Bluetooth adapter: binding %s to %s again", device, os.path.basename(driver))
+                for step in ("unbind", "bind"):
+                    try:
+                        with open(os.path.join(driver, step), "w") as f:
+                            f.write(device)
+                    except OSError as e:
+                        log.warning("%s %s: %s", step, device, e)
+
+    async def wake_bluetooth(self, wait=4.0):
+        """The RG35XX SP's RTL8821CS often does not answer when the kernel first calls it
+        at boot, and then there is no adapter until its UART driver is bound again."""
+        if self.sim or self.has_bluetooth_adapter():
+            return
+        await asyncio.get_running_loop().run_in_executor(None, self._rebind_bluetooth_uart)
+        deadline = time.monotonic() + wait
+        while not self.has_bluetooth_adapter() and time.monotonic() < deadline:
+            await asyncio.sleep(0.2)
+
     async def set_bluetooth(self, on):
         if self.sim:
             return
+        if on:
+            await self.wake_bluetooth()
         if shutil.which("rocknix-bluetooth"):
             await run("rocknix-bluetooth", "enable" if on else "disable", timeout=20)
         else:
