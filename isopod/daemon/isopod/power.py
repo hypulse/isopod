@@ -78,11 +78,13 @@ class Power:
     LID_SLEEP = 30
     SETTLE = 2.0
 
-    def __init__(self, state, settings, events, sim=False):
+    def __init__(self, state, settings, events, sim=False, remember=None):
         self.state = state
         self.settings = settings
         self.events = events
         self.sim = sim
+        self.remember = remember
+        self._remembering = None
         self.backlight = Backlight()
         self.power_key_lock = Inhibitor("handle-power-key", "isoPod handles the power button")
         self.lid_lock = Inhibitor("handle-lid-switch", "isoPod decides what closing the lid does")
@@ -113,8 +115,15 @@ class Power:
         return self.state.get("player")["state"] == "play"
 
     def apply_brightness(self):
+        """ROCKNIX keeps a brightness of its own and sets it at boot and on every wake, so
+        that one is kept the same as isoPod's."""
         if self.screen_on:
             self.backlight.set_percent(self.settings["brightness"])
+        if self.remember:
+            if self._remembering:
+                self._remembering.cancel()
+            self._remembering = asyncio.get_running_loop().call_later(
+                1.0, self.remember, self.settings["brightness"])
 
     async def set_screen(self, on):
         if on == self.screen_on:

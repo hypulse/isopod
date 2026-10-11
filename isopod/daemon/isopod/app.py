@@ -45,7 +45,8 @@ class App:
         self.audio = Audio(FakeAudio() if self.sim else Pactl(), self.state, self.settings,
                            remember=lambda level: spawn(self.system.rocknix_setting("audio.volume", level)),
                            lost=self._route_lost, first=self.system.rocknix_volume)
-        self.power = Power(self.state, self.settings, self, sim=self.sim)
+        self.power = Power(self.state, self.settings, self, sim=self.sim,
+                           remember=lambda percent: spawn(self.system.rocknix_setting("display.brightness", percent)))
         self.battery = Battery(self.state, notify=self._battery_low, sim=self.sim)
         runner = getattr(args, "apps", None) or ("sim" if self.sim else "systemd")
         self.apps = Apps(self.state, self, {k: v for k, v in os.environ.items() if k in APP_ENV_KEYS},
@@ -268,6 +269,8 @@ class App:
                 log.info("shell connected %.1f s after the kernel started", uptime or 0)
                 # Only a hello during boot measures boot; a restart of isopodd later does not.
                 self.ui_ready_at = uptime if uptime and uptime < 180 else 0
+                # ROCKNIX's boot scripts are done by now, and one of them set its brightness.
+                self.power.apply_brightness()
             return {"state": self.state.snapshot(), "strings": self.t.shell_strings(),
                     "lang": self.t.lang, "version": __version__}
         if op == "page":

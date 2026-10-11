@@ -304,6 +304,16 @@ class PowerLidTest(unittest.IsolatedAsyncioTestCase):
         await self.press()
         self.assertFalse(self.power.screen_on, "a later press turns the screen off")
 
+    async def test_rocknix_is_told_the_brightness_so_its_wake_script_sets_the_same(self):
+        told, settings = [], {"brightness": 35}
+        power = Power(self.state, settings, self.events, sim=True, remember=told.append)
+        power.apply_brightness()
+        settings["brightness"] = 40
+        power.apply_brightness()
+        self.assertEqual(told, [], "not for every step of the slider")
+        await asyncio.sleep(1.1)
+        self.assertEqual(told, [40])
+
     async def test_front_app_can_hold_the_screen(self):
         self.assertIsNotNone(self.power._screen_deadline())
         self.events.hold = 0
