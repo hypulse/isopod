@@ -24,7 +24,10 @@ replaces the front end with a small shell built around your music.
 - **Bluetooth** headphones connect from one list, in Settings or the Control Center.
 - **Headphones**, wired or Bluetooth, take the sound when they arrive; with both, the one
   connected last plays. Unplugging or losing the one in use pauses music and videos before
-  a note reaches the speaker, and each output keeps its own volume, never above the limit.
+  a note reaches the speaker.
+- **Volume** is kept for each output on its own, the speaker, wired headphones and every
+  Bluetooth headset, never above the limit, and each comes back where it was left after a
+  restart. A headset's own volume buttons count.
 - **Wi-Fi** remembers every network you join.
 - **Multitasking**: a video keeps its place. Home pauses it where it is, and the home
   screen lists it so you can pick it up again.

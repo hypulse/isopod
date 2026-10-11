@@ -256,9 +256,11 @@ class Power:
         await run("systemctl", "suspend")
 
     async def restart(self):
+        self.events.close()
         if not self.sim:
             await run("systemctl", "reboot")
 
     async def shut_down(self):
+        self.events.close()
         if not self.sim:
             await run("systemctl", "poweroff")

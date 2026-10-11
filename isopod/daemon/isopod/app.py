@@ -44,7 +44,7 @@ class App:
         self.wifi = Wifi(FakeWifi() if self.sim else Nmcli(), self.state, self.t, self)
         self.audio = Audio(FakeAudio() if self.sim else Pactl(), self.state, self.settings,
                            remember=lambda level: spawn(self.system.rocknix_setting("audio.volume", level)),
-                           lost=self._route_lost)
+                           lost=self._route_lost, first=self.system.rocknix_volume)
         self.power = Power(self.state, self.settings, self, sim=self.sim)
         self.battery = Battery(self.state, notify=self._battery_low, sim=self.sim)
         runner = getattr(args, "apps", None) or ("sim" if self.sim else "systemd")
@@ -164,7 +164,12 @@ class App:
             "title": "", "items": options, "token": self.pages._token(choose)}}})
 
     def before_sleep(self):
+        self.audio.flush()
         spawn(self.music.pause())
+
+    def close(self):
+        """Power is about to go, or isopodd is being stopped."""
+        self.audio.flush()
 
     def set_language(self, lang):
         self.t.lang = lang

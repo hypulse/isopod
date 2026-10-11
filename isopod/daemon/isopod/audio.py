@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import time
 
 from .util import run, spawn
 
@@ -187,22 +188,35 @@ class Audio:
     """Where sound goes, by the iPhone's rules. The output connected last plays: Bluetooth or
     wired headphones, else the speaker. Losing the one in use pauses what was playing before a
     note reaches the speaker. While Bluetooth plays, the device's own sink stays muted, so a
-    Bluetooth dropout is silent too. Each output keeps its own volume, never above the limit."""
+    Bluetooth dropout is silent too.
+
+    Each output keeps its own volume, never above the limit, and isoPod is the one that keeps
+    it: the speaker and the wired headphones stay where they were left across a restart
+    whatever else sets the sink (ROCKNIX's boot script puts one saved number on whichever
+    output plays). A headset's own volume buttons are the user's hand and are kept."""
 
     STEP = 5
     SETTLE = 0.4
+    SAVE_AFTER = 0.5
+    ECHO = 2.0  # what a headset reports for a moment after its level was set is not a button
 
-    def __init__(self, backend, state, settings, remember=None, lost=None):
+    def __init__(self, backend, state, settings, remember=None, lost=None, first=None):
         self.backend = backend
         self.state = state
         self.settings = settings
         self.remember = remember
         self.lost = lost
+        self.first = first        # the speaker's level on a device that has never set one
         self.wired = None         # headphones in the jack; unknown until the input layer says
         self.recent = []          # outputs in the order they arrived: "wired" or a Bluetooth sink
         self.output = None        # what plays now: "speaker", "wired", or a sink name
         self._seen = (None, None, None)
         self._levels = dict(settings["volumes"])
+        self._leveled = None      # the output whose level was put back when it came into use
+        self._setting = asyncio.Lock()
+        self._writing = 0
+        self._echo_until = 0.0
+        self._put_back = []
         self._save = None
         self._save_levels = None
         self._timer = None
@@ -211,6 +225,10 @@ class Audio:
         self._gen = 0
 
     async def start(self):
+        if "speaker" not in self._levels and self.first:
+            level = await self.first()
+            if level is not None:
+                self._levels["speaker"] = level
         await self.backend.start(self._changed)
         self._schedule(0)
 
@@ -223,6 +241,7 @@ class Audio:
         internal = self._internal()
         seen = (bt, b.default, internal["port"] if internal else None)
         if seen == self._seen:
+            self._watch_level()
             return
         before = self._seen[0] or ()
         self._seen = seen
@@ -350,12 +369,12 @@ class Audio:
                     return
             if not await step(b.set_mute, internal["name"], target != internal["name"]):
                 return
-        changed, self.output = want != self.output, want
+        self.output = want
         await b.refresh()
         if self._gen != gen:
             self._again = True
             return
-        await self._restore_level(changed)
+        await self._settle_level()
 
     # volume
 
@@ -367,40 +386,87 @@ class Audio:
             return f"bt:{sink['address'] or sink['name']}"
         return {"headphones": "wired", "speaker": "speaker"}.get(sink["kind"])
 
-    async def _restore_level(self, changed):
-        """An output comes back at the level it was left at, and never above the limit."""
-        sink = self.backend.current()
-        key = self._key()
-        if not sink or not key:
+    def _limit(self):
+        return self.settings["volume_limit"]
+
+    async def _write(self, key, level):
+        """The level of an output: remembered at once, and set when the sink is free. Presses
+        that pile up behind a slow sink end at the last level asked for."""
+        self._leveled = key
+        if self._levels.get(key) != level:
+            self._levels[key] = level
+            if self._save_levels:
+                self._save_levels.cancel()
+            self._save_levels = asyncio.get_running_loop().call_later(self.SAVE_AFTER, self.flush)
+        async with self._setting:
+            sink, level = self.backend.current(), self._levels[key]
+            if not sink or self._key() != key or sink["level"] == level:
+                return
+            self._writing += 1
+            try:
+                await self.backend.set_volume(sink["name"], level)
+            finally:
+                self._writing -= 1
+            if sink["kind"] == "bluetooth":
+                self._echo_until = time.monotonic() + self.ECHO
+
+    def flush(self):
+        """Levels reach the disk shortly after the last change, and at once before power goes."""
+        if self._save_levels:
+            self._save_levels.cancel()
+            self._save_levels = None
+        self.settings.set("volumes", dict(self._levels))
+
+    async def _settle_level(self):
+        """An output comes back at the level it was left at, and never above the limit. One
+        heard for the first time keeps the level it arrives with."""
+        sink, key = self.backend.current(), self._key()
+        if sink and key and key != self._leveled:
+            await self._write(key, min(self._levels.get(key, sink["level"]), self._limit()))
+        else:
+            self._watch_level()
+
+    def _watch_level(self):
+        """Somebody else moved the volume of the output in use."""
+        sink, key = self.backend.current(), self._key()
+        if self._writing or not sink or key != self._leveled or key not in self._levels:
             return
-        level = self._levels.get(key) if changed else None
-        level = min(sink["level"] if level is None else level, self.settings["volume_limit"])
-        if level != sink["level"]:
-            await self.backend.set_volume(sink["name"], level)
+        level = min(self._levels[key], self._limit())
+        if abs(sink["level"] - level) <= 1:
+            return
+        now = time.monotonic()
+        self._put_back = [t for t in self._put_back if now - t < 3]
+        if sink["kind"] != "bluetooth" and len(self._put_back) < 3:
+            self._put_back.append(now)
+            spawn(self._write(key, level))
+        elif now >= self._echo_until:
+            # A headset's buttons, or a sink that will not take the level: what it says goes.
+            spawn(self._write(key, min(sink["level"], self._limit())))
 
     async def change(self, delta):
-        sink = self.backend.current()
+        sink, key = self.backend.current(), self._key()
         if not sink:
             return None
-        limit = self.settings["volume_limit"]
-        level = max(0, min(limit, sink["level"] + delta))
-        if level != sink["level"]:
+        known = key in self._levels and key == self._leveled and sink["kind"] != "bluetooth"
+        base = min(self._levels[key], self._limit()) if known else sink["level"]
+        level = max(0, min(self._limit(), base + delta))
+        if key:
+            await self._write(key, level)
+        elif level != sink["level"]:
             await self.backend.set_volume(sink["name"], level)
-            key = self._key()
-            if key:
-                self._levels[key] = level
-                if self._save_levels:
-                    self._save_levels.cancel()
-                self._save_levels = asyncio.get_running_loop().call_later(
-                    1.5, lambda: self.settings.set("volumes", dict(self._levels)))
-            if sink["kind"] == "speaker" and self.remember:
-                # ROCKNIX restores this at boot, before isoPod puts each output's own level back.
-                if self._save:
-                    self._save.cancel()
-                self._save = asyncio.get_running_loop().call_later(1.5, self.remember, level)
+        if sink["kind"] == "speaker" and self.remember:
+            # What ROCKNIX sets at boot, so the speaker starts where it was even before
+            # isoPod is up.
+            if self._save:
+                self._save.cancel()
+            self._save = asyncio.get_running_loop().call_later(1.5, self.remember, level)
         return level
 
     async def clamp_to_limit(self):
-        sink = self.backend.current()
-        if sink and sink["level"] > self.settings["volume_limit"]:
-            await self.backend.set_volume(sink["name"], self.settings["volume_limit"])
+        sink, key = self.backend.current(), self._key()
+        if not sink or sink["level"] <= self._limit():
+            return
+        if key:
+            await self._write(key, self._limit())
+        else:
+            await self.backend.set_volume(sink["name"], self._limit())

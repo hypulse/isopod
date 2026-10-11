@@ -216,6 +216,9 @@ class FakeEvents:
     def app_failed(self, title):
         pass
 
+    def close(self):
+        pass
+
 
 class PowerLidTest(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -534,6 +537,168 @@ class RoutesTest(unittest.IsolatedAsyncioTestCase):
         self.plug(True)
         await self.quiet()
         self.assertEqual(self.fake.routes["headphones"]["level"], 55)
+
+
+class Late(FakeAudio):
+    """PipeWire that has no sink to show yet when isopodd first asks."""
+
+    ready = False
+
+    def _build(self):
+        super()._build()
+        if not self.ready:
+            self.sinks = []
+
+
+class LevelsTest(unittest.IsolatedAsyncioTestCase):
+    """Each output's volume across a restart, with ROCKNIX's boot script and a headset's own
+    buttons in the way."""
+
+    PODS = "AA:BB:CC:DD:EE:01"
+
+    async def asyncSetUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.first = None
+
+    async def boot(self, jack=False, backend=FakeAudio):
+        """A fresh PipeWire (speaker at 40, headphones at 30, Bluetooth at 50) and a fresh
+        isopodd over the settings on disk."""
+        async def first():
+            return self.first
+        self.fake = backend()
+        self.fake.plug(jack)
+        self.settings = Settings(self.dir)
+        self.audio = Audio(self.fake, State(lambda snapshot: None), self.settings, first=first)
+        self.audio.SETTLE = self.audio.SAVE_AFTER = 0.02
+        self.audio.ECHO = 0.1
+        await self.audio.start()
+        self.audio.jack(jack, initial=True)
+        await self.quiet()
+
+    async def quiet(self):
+        await asyncio.sleep(0.15)
+
+    async def plug(self, inserted):
+        self.fake.plug(inserted)
+        self.audio.jack(inserted)
+        await self.quiet()
+
+    async def others_set(self, level):
+        """Like ROCKNIX's 050-audio: `pactl set-sink-volume @DEFAULT_SINK@`, from outside."""
+        self.fake._state(self.fake.default)["level"] = level
+        self.fake._changed()
+        await self.quiet()
+
+    def levels(self):
+        bluetooth = [bt["level"] for bt in self.fake.bluetooth.values()]
+        return self.fake.routes["speaker"]["level"], self.fake.routes["headphones"]["level"], *bluetooth
+
+    async def test_each_output_comes_back_where_it_was_left(self):
+        await self.boot()
+        await self.audio.change(+25)
+        await self.plug(True)
+        await self.audio.change(-10)
+        self.fake.add_bluetooth("AirPods", self.PODS)
+        await self.quiet()
+        await self.audio.change(+5)
+        self.assertEqual(self.levels(), (65, 20, 55))
+        await self.quiet()
+
+        await self.boot()
+        self.assertEqual(self.levels(), (65, 30), "the speaker is back; nothing else is in use yet")
+        await self.others_set(60)
+        self.assertEqual(self.levels(), (65, 30), "and ROCKNIX's boot script does not move it")
+        await self.plug(True)
+        self.assertEqual(self.levels(), (65, 20))
+        self.fake.add_bluetooth("AirPods", self.PODS)
+        await self.quiet()
+        self.assertEqual(self.levels(), (65, 20, 55))
+
+    async def test_headphones_in_at_boot_do_not_get_the_speakers_number(self):
+        Settings(self.dir).set("volumes", {"speaker": 80, "wired": 25})
+        await self.boot(jack=True)
+        self.assertEqual(self.fake.routes["headphones"]["level"], 25)
+        await self.others_set(80)
+        self.assertEqual(self.fake.routes["headphones"]["level"], 25)
+
+    async def test_a_sink_that_shows_up_late_still_gets_its_level(self):
+        Settings(self.dir).set("volumes", {"speaker": 70})
+        await self.boot(backend=Late)
+        self.fake.ready = True
+        self.fake._changed()
+        await self.quiet()
+        self.assertEqual(self.fake.routes["speaker"]["level"], 70)
+
+    async def test_a_device_that_never_set_a_level_starts_where_rocknix_would(self):
+        self.first = 60
+        await self.boot()
+        self.assertEqual(self.fake.routes["speaker"]["level"], 60)
+        await self.plug(True)
+        self.assertEqual(self.fake.routes["headphones"]["level"], 30, "headphones keep what they arrive with")
+        await self.others_set(60)
+        self.assertEqual(self.fake.routes["headphones"]["level"], 30)
+
+    async def test_a_headsets_own_buttons_are_kept(self):
+        await self.boot()
+        self.fake.add_bluetooth("AirPods", self.PODS)
+        await self.quiet()
+        await self.others_set(70)
+        self.assertEqual(self.levels(), (40, 30, 70))
+        self.assertEqual(Settings(self.dir)["volumes"]["bt:" + self.PODS], 70)
+        self.settings.set("volume_limit", 60)
+        await self.others_set(90)
+        self.assertEqual(self.levels(), (40, 30, 60), "never above the limit")
+
+    async def test_what_a_headset_says_right_after_its_level_was_set_is_an_echo(self):
+        Settings(self.dir).set("volumes", {"bt:" + self.PODS: 35})
+        await self.boot()
+        self.audio.ECHO = 5
+        self.fake.add_bluetooth("AirPods", self.PODS)
+        await self.quiet()
+        await self.others_set(50)
+        self.assertEqual(self.audio._levels["bt:" + self.PODS], 35)
+        await self.audio.change(+5)
+        self.assertEqual(self.levels(), (40, 30, 55), "the keys go on from what is heard")
+
+    async def test_the_keys_go_on_from_the_level_kept_not_from_one_set_outside(self):
+        Settings(self.dir).set("volumes", {"speaker": 30})
+        await self.boot()
+        self.fake._state(self.fake.default)["level"] = 60
+        self.fake.sinks[0]["level"] = 60
+        self.assertEqual(await self.audio.change(+5), 35)
+
+    async def test_presses_faster_than_the_sink_all_count(self):
+        class Slow(FakeAudio):
+            async def set_volume(self, sink, percent):
+                await asyncio.sleep(0.03)
+                await super().set_volume(sink, percent)
+        await self.boot(backend=Slow)
+        await asyncio.gather(*(self.audio.change(+5) for _ in range(4)))
+        await self.quiet()
+        self.assertEqual(self.levels(), (60, 30))
+
+    async def test_a_level_is_on_disk_before_power_goes(self):
+        await self.boot()
+        self.audio.SAVE_AFTER = 60
+        await self.audio.change(+5)
+        self.assertNotEqual(Settings(self.dir)["volumes"].get("speaker"), 45)
+        self.audio.flush()
+        self.assertEqual(Settings(self.dir)["volumes"]["speaker"], 45)
+
+    async def test_a_sink_that_will_not_take_a_level_is_not_fought(self):
+        class Stubborn(FakeAudio):
+            asked = 0
+
+            async def set_volume(self, sink, percent):
+                self.asked += 1
+                await super().set_volume(sink, 50)
+        Settings(self.dir).set("volumes", {"speaker": 30})
+        await self.boot(backend=Stubborn)
+        for _ in range(10):
+            self.fake._changed()
+            await asyncio.sleep(0.02)
+        self.assertEqual(self.audio._levels["speaker"], 50, "what the sink says goes in the end")
+        self.assertLessEqual(self.fake.asked, 5)
 
 
 class Bluez(Backend):

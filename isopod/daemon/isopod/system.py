@@ -25,12 +25,22 @@ class System:
             return
         await run("sh", "-c", f'. {FUNCTIONS}; set_setting "$0" "$1"', key, str(value))
 
+    async def _rocknix_get(self, key):
+        if self.sim or not os.path.exists(FUNCTIONS):
+            return ""
+        _, out, _ = await run("sh", "-c", f'. {FUNCTIONS}; get_setting "$0"', key)
+        return out.strip()
+
     async def bluetooth_wanted(self):
         """Whether Bluetooth was on when the device last went down."""
-        if self.sim or not os.path.exists(FUNCTIONS):
-            return False
-        _, out, _ = await run("sh", "-c", f'. {FUNCTIONS}; get_setting "$0"', "controllers.bluetooth.enabled")
-        return out.strip() == "1"
+        return await self._rocknix_get("controllers.bluetooth.enabled") == "1"
+
+    async def rocknix_volume(self):
+        """The one volume ROCKNIX keeps, which its boot script sets on whatever plays."""
+        try:
+            return max(0, min(100, int(await self._rocknix_get("audio.volume"))))
+        except ValueError:
+            return None
 
     def has_bluetooth_adapter(self):
         try:

@@ -32,10 +32,12 @@ def main(argv=None):
     asyncio.set_event_loop(loop)
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, loop.stop)
-    task = loop.create_task(App(args).run())
+    app = App(args)
+    task = loop.create_task(app.run())
     try:
         loop.run_forever()
     finally:
+        app.close()
         task.cancel()
         loop.close()
 
