@@ -8,7 +8,7 @@ RUN apt-get update \
       libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev \
       python3 python3-pil \
       mpd mpc ffmpeg \
-      ca-certificates curl \
+      ca-certificates curl fonts-noto-cjk \
  && rm -rf /var/lib/apt/lists/*
 
 ARG PRETENDARD=https://raw.githubusercontent.com/orioncactus/pretendard/v1.3.9/packages/pretendard/dist/public/static

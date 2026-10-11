@@ -14,7 +14,7 @@ typedef struct {
     char *s;
     int weight, size, max_w;
     SDL_Texture *tex;
-    int w, h;
+    int w, h, dy;
     Uint32 used;
 } TextEntry;
 
@@ -37,6 +37,12 @@ typedef struct {
 
 static const char *weight_file[FONT_WEIGHTS] = {"Pretendard-Regular.otf", "Pretendard-Medium.otf",
                                                 "Pretendard-SemiBold.otf", "Pretendard-Bold.otf"};
+/* Pretendard draws Hangul and Latin. What it lacks, Japanese and Chinese above all, comes
+ * from the Noto Sans CJK that ROCKNIX ships (the second path is where Ubuntu keeps it). */
+static const char *fallback_file[] = {"/usr/share/fonts/truetype/noto-cjk/NotoSansCJKsc-Regular.otf",
+                                      "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"};
+static TTF_Font *fallbacks[2][64];
+static bool no_fallback;
 static TextEntry texts[TEXT_SLOTS];
 static int text_count;
 static ImageEntry images[IMAGE_SLOTS];
@@ -222,6 +228,133 @@ void stroke_round(int x, int y, int w, int h, int r, int t, Rgba c)
 
 /* text ------------------------------------------------------------------ */
 
+static TTF_Font *fallback_font(int weight, int size)
+{
+    int bold = weight >= FONT_SEMIBOLD;
+    if (no_fallback || size <= 0 || size >= 64)
+        return NULL;
+    if (!fallbacks[bold][size]) {
+        const char *named = SDL_getenv("ISOPOD_FALLBACK_FONT");
+        TTF_Font *f = named ? TTF_OpenFont(named, size) : NULL;
+        for (size_t i = 0; !f && i < SDL_arraysize(fallback_file); i++)
+            f = TTF_OpenFont(fallback_file[i], size);
+        if (!f) {
+            SDL_Log("no fallback font: text outside Pretendard shows as boxes");
+            no_fallback = true;
+            return NULL;
+        }
+        TTF_SetFontHinting(f, TTF_HINTING_LIGHT);
+        if (bold)
+            TTF_SetFontStyle(f, TTF_STYLE_BOLD);
+        fallbacks[bold][size] = f;
+    }
+    return fallbacks[bold][size];
+}
+
+static Uint32 next_char(const char **s)
+{
+    const unsigned char *p = (const unsigned char *)*s;
+    Uint32 cp = *p++;
+    int more = cp < 0x80 ? 0 : cp < 0xE0 ? 1 : cp < 0xF0 ? 2 : 3;
+    if (more)
+        cp &= 0x3F >> more;
+    while (more-- && (*p & 0xC0) == 0x80)
+        cp = cp << 6 | (*p++ & 0x3F);
+    *s = (const char *)p;
+    return cp;
+}
+
+typedef void (*RunFn)(TTF_Font *f, const char *run, void *ctx);
+
+/* Hands fn each stretch of s that one font draws. False, and nothing done, when
+ * Pretendard draws all of it or there is no fallback to turn to. */
+static bool each_run(int weight, int size, const char *s, RunFn fn, void *ctx)
+{
+    TTF_Font *base = font(weight, size), *other = NULL;
+    bool lacking = false;
+    for (const char *p = s; base && *p && !lacking;) {
+        Uint32 cp = next_char(&p);
+        lacking = cp >= 0x80 && !TTF_GlyphIsProvided32(base, cp);
+    }
+    if (!lacking || !(other = fallback_font(weight, size)))
+        return false;
+    char *run = SDL_malloc(strlen(s) + 1);
+    const char *start = s, *p = s;
+    TTF_Font *cur = NULL;
+    for (;;) {
+        const char *at = p;
+        Uint32 cp = *p ? next_char(&p) : 0;
+        TTF_Font *f = !cp ? NULL
+                    : !TTF_GlyphIsProvided32(base, cp) && TTF_GlyphIsProvided32(other, cp) ? other : base;
+        if (f != cur) {
+            if (cur) {
+                memcpy(run, start, (size_t)(at - start));
+                run[at - start] = 0;
+                fn(cur, run, ctx);
+            }
+            start = at;
+            cur = f;
+        }
+        if (!cp)
+            break;
+    }
+    SDL_free(run);
+    return true;
+}
+
+static void add_width(TTF_Font *f, const char *run, void *ctx)
+{
+    int w = 0;
+    TTF_SizeUTF8(f, run, &w, NULL);
+    *(int *)ctx += w;
+}
+
+static int measure(int weight, int size, const char *s)
+{
+    int w = 0;
+    if (!each_run(weight, size, s, add_width, &w))
+        TTF_SizeUTF8(font(weight, size), s, &w, NULL);
+    return w;
+}
+
+typedef struct {
+    SDL_Surface *out;
+    int x, ascent;
+} Strip;
+
+static void blit_run(TTF_Font *f, const char *run, void *ctx)
+{
+    Strip *strip = ctx;
+    SDL_Surface *part = TTF_RenderUTF8_Blended(f, run, (SDL_Color){255, 255, 255, 255});
+    if (!part)
+        return;
+    SDL_SetSurfaceBlendMode(part, SDL_BLENDMODE_NONE);
+    SDL_BlitSurface(part, NULL, strip->out, &(SDL_Rect){strip->x, strip->ascent - TTF_FontAscent(f), 0, 0});
+    SDL_FreeSurface(part);
+    add_width(f, run, &strip->x);
+}
+
+/* White text on one surface. Runs from the two fonts share a baseline; dy is how far the
+ * surface starts above the line Pretendard alone would start on. */
+static SDL_Surface *render_text(int weight, int size, const char *s, int *dy)
+{
+    TTF_Font *base = font(weight, size);
+    int w = 0;
+    *dy = 0;
+    if (!each_run(weight, size, s, add_width, &w))
+        return TTF_RenderUTF8_Blended(base, s, (SDL_Color){255, 255, 255, 255});
+    TTF_Font *other = fallback_font(weight, size);
+    int ascent = SDL_max(TTF_FontAscent(base), TTF_FontAscent(other));
+    int h = SDL_max(ascent - TTF_FontAscent(base) + TTF_FontHeight(base),
+                    ascent - TTF_FontAscent(other) + TTF_FontHeight(other));
+    Strip strip = {SDL_CreateRGBSurfaceWithFormat(0, SDL_max(w, 1), h, 32, SDL_PIXELFORMAT_ARGB8888), 0, ascent};
+    if (!strip.out)
+        return NULL;
+    each_run(weight, size, s, blit_run, &strip);
+    *dy = TTF_FontAscent(base) - ascent;
+    return strip.out;
+}
+
 static Uint32 hash_key(const char *s, int weight, int size, int max_w)
 {
     Uint32 h = 2166136261u ^ (Uint32)(weight * 131 + size * 7 + max_w * 31);
@@ -231,11 +364,9 @@ static Uint32 hash_key(const char *s, int weight, int size, int max_w)
 }
 
 /* Longest prefix (on a character boundary) that fits with a trailing ellipsis. */
-static char *ellipsize(TTF_Font *f, const char *s, int max_w)
+static char *ellipsize(int weight, int size, const char *s, int max_w)
 {
-    int w = 0;
-    TTF_SizeUTF8(f, s, &w, NULL);
-    if (w <= max_w)
+    if (measure(weight, size, s) <= max_w)
         return SDL_strdup(s);
     int len = (int)strlen(s), chars = 0;
     int *cut = SDL_malloc(((size_t)len + 1) * sizeof(int));
@@ -248,8 +379,7 @@ static char *ellipsize(TTF_Font *f, const char *s, int max_w)
         int mid = (lo + hi + 1) / 2;
         memcpy(buf, s, (size_t)cut[mid]);
         memcpy(buf + cut[mid], "…", 4);
-        TTF_SizeUTF8(f, buf, &w, NULL);
-        if (w <= max_w)
+        if (measure(weight, size, buf) <= max_w)
             lo = mid;
         else
             hi = mid - 1;
@@ -277,11 +407,11 @@ static TextEntry *text_entry(int weight, int size, const char *s, int max_w)
             return e;
         }
     }
-    TTF_Font *f = font(weight, size);
-    if (!f)
+    if (!font(weight, size))
         return NULL;
-    char *shown = max_w > 0 ? ellipsize(f, s, max_w) : SDL_strdup(s);
-    SDL_Surface *surf = TTF_RenderUTF8_Blended(f, shown, (SDL_Color){255, 255, 255, 255});
+    char *shown = max_w > 0 ? ellipsize(weight, size, s, max_w) : SDL_strdup(s);
+    int dy = 0;
+    SDL_Surface *surf = render_text(weight, size, shown, &dy);
     SDL_free(shown);
     if (!surf)
         return NULL;
@@ -291,7 +421,7 @@ static TextEntry *text_entry(int weight, int size, const char *s, int max_w)
     for (int probe = 0; probe < TEXT_SLOTS; probe++) {
         TextEntry *e = &texts[(h + probe) % TEXT_SLOTS];
         if (!e->s) {
-            *e = (TextEntry){SDL_strdup(s), weight, size, max_w, tex, w, hh, frame};
+            *e = (TextEntry){SDL_strdup(s), weight, size, max_w, tex, w, hh, dy, frame};
             text_count++;
             return e;
         }
@@ -317,7 +447,7 @@ int draw_text(int weight, int size, const char *s, int x, int y, Rgba c, int max
     if (!e)
         return 0;
     tint(e->tex, c);
-    SDL_RenderCopy(app.renderer, e->tex, NULL, &(SDL_Rect){x, y, e->w, e->h});
+    SDL_RenderCopy(app.renderer, e->tex, NULL, &(SDL_Rect){x, y + e->dy, e->w, e->h});
     return e->w;
 }
 
@@ -327,7 +457,7 @@ int draw_text_right(int weight, int size, const char *s, int right, int y, Rgba 
     if (!e)
         return 0;
     tint(e->tex, c);
-    SDL_RenderCopy(app.renderer, e->tex, NULL, &(SDL_Rect){right - e->w, y, e->w, e->h});
+    SDL_RenderCopy(app.renderer, e->tex, NULL, &(SDL_Rect){right - e->w, y + e->dy, e->w, e->h});
     return e->w;
 }
 
@@ -337,15 +467,14 @@ void draw_text_center(int weight, int size, const char *s, int cx, int y, Rgba c
     if (!e)
         return;
     tint(e->tex, c);
-    SDL_RenderCopy(app.renderer, e->tex, NULL, &(SDL_Rect){cx - e->w / 2, y, e->w, e->h});
+    SDL_RenderCopy(app.renderer, e->tex, NULL, &(SDL_Rect){cx - e->w / 2, y + e->dy, e->w, e->h});
 }
 
 /* Greedy word wrap that also breaks inside long words (Hangul has no spaces to rely on). */
 static int wrap_text(int weight, int size, const char *s, int x, int y, int w, int line_h, int max_lines,
                      Rgba c, bool center, bool draw)
 {
-    TTF_Font *f = font(weight, size);
-    if (!f || !s || !*s)
+    if (!font(weight, size) || !s || !*s)
         return 0;
     int lines = 0, len = (int)strlen(s), start = 0;
     char *buf = SDL_malloc((size_t)len + 1);
@@ -364,9 +493,7 @@ static int wrap_text(int weight, int size, const char *s, int x, int y, int w, i
                 next++;
             memcpy(buf, s + start, (size_t)(next - start));
             buf[next - start] = 0;
-            int tw = 0;
-            TTF_SizeUTF8(f, buf, &tw, NULL);
-            if (tw > w)
+            if (measure(weight, size, buf) > w)
                 break;
             if (s[i] == ' ')
                 last_space = i;
@@ -386,12 +513,7 @@ static int wrap_text(int weight, int size, const char *s, int x, int y, int w, i
         }
         memcpy(buf, s + start, (size_t)(end - start));
         buf[end - start] = 0;
-        int lx = x;
-        if (center) {
-            int tw = 0;
-            TTF_SizeUTF8(f, buf, &tw, NULL);
-            lx = x - tw / 2;
-        }
+        int lx = center ? x - measure(weight, size, buf) / 2 : x;
         if (draw)
             draw_text(weight, size, buf, lx, y + lines * line_h, c, 0);
         lines++;
@@ -428,12 +550,12 @@ void draw_marquee(int weight, int size, const char *s, int x, int y, int w, Rgba
     Uint32 cycle = (Uint32)(pause_ms + travel * 1000 / 55);
     Uint32 t = (SDL_GetTicks() - since) % cycle;
     int off = t < (Uint32)pause_ms ? 0 : (int)((t - pause_ms) * 55 / 1000);
-    SDL_Rect clip = {x, y - 4, w, e->h + 8};
+    SDL_Rect clip = {x, y + e->dy - 4, w, e->h + 8};
     SDL_RenderSetClipRect(app.renderer, &clip);
     tint(e->tex, c);
-    SDL_RenderCopy(app.renderer, e->tex, NULL, &(SDL_Rect){x - off, y, e->w, e->h});
+    SDL_RenderCopy(app.renderer, e->tex, NULL, &(SDL_Rect){x - off, y + e->dy, e->w, e->h});
     if (off > 0)
-        SDL_RenderCopy(app.renderer, e->tex, NULL, &(SDL_Rect){x - off + travel, y, e->w, e->h});
+        SDL_RenderCopy(app.renderer, e->tex, NULL, &(SDL_Rect){x - off + travel, y + e->dy, e->w, e->h});
     SDL_RenderSetClipRect(app.renderer, NULL);
 }
 
