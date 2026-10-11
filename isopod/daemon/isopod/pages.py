@@ -662,16 +662,9 @@ class Pages:
 
     async def _page_control(self, path, rest):
         t = self.t
-        b = self.app.bluetooth
-        items = []
-        if b.enabled:
-            for d in b.recent_audio():
-                busy = d.path in b.busy
-                items.append(item("d:" + d.path, d.name, "spinner" if busy else "none", icon="audio",
-                                  value=t("connected") if d.ready and not busy else None))
         wifi = self.app.state.get("wifi")
-        items += [
-            item("bluetooth", t("bluetooth"), value=t("on") if b.enabled else t("off")),
+        items = [
+            item("bluetooth", t("bluetooth"), value=t("on") if self.app.bluetooth.enabled else t("off")),
             item("wifi", t("wifi"), value=wifi["ssid"] or (t("on") if wifi["enabled"] else t("off"))),
             item("brightness", t("brightness"), value=f"{self.app.settings['brightness']}%"),
             item("sleep", t("sleep_now"), "none"),
@@ -679,9 +672,6 @@ class Pages:
         return page(path, "", items, presentation="sheet", live=True)
 
     async def _do_control(self, path, rest, key):
-        if key.startswith("d:"):
-            spawn(self.app.bluetooth.activate(key[2:]))
-            return {"reload": True}
         if key == "sleep":
             spawn(self.app.power.sleep())
             return {"dismiss": True}

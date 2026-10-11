@@ -311,14 +311,16 @@ class Bluetooth:
         self._publish()
         spawn(self._recover())
 
-    async def _recover(self, settle=3.0):
-        """Bluetooth that was on stays on across a boot, also when its radio slept through
-        the kernel's first call and ROCKNIX found no adapter to start."""
-        if not await self.system.bluetooth_wanted():
+    async def _recover(self, settle=3.0, tries=3):
+        """Bluetooth that was on stays on across a boot: when ROCKNIX's own setting did not
+        survive it, and when the radio slept through the kernel's first call."""
+        if not (self.settings["bluetooth"] or await self.system.bluetooth_wanted()):
             return
-        await asyncio.sleep(settle)
-        if not self.system.has_bluetooth_adapter():
-            await self.set_enabled(True)
+        for _ in range(tries):
+            await asyncio.sleep(settle)
+            if self.backend.powered:
+                return
+            await self._switch(True)
 
     def _relevant(self, kind, device, old):
         if kind == "adapter":
@@ -355,8 +357,6 @@ class Bluetooth:
         if self._said.get(device.path, False) == device.ready:
             return
         self._said[device.path] = device.ready
-        if device.ready:
-            self.settings.remember_bluetooth(device.address, device.name)
         self.events.toast(self.t("bt_connected" if device.ready else "bt_disconnected", name=device.name),
                           "bluetooth")
 
@@ -389,22 +389,14 @@ class Bluetooth:
     def _listening(self):
         return any(d.ready and d.is_audio for d in self.backend.devices.values())
 
-    def recent_audio(self):
-        known = {d.address: d for d in self.backend.devices.values() if d.paired}
-        out = []
-        for entry in self.settings["recent_bluetooth"]:
-            dev = known.get(entry["address"])
-            if dev and dev.is_audio:
-                out.append(dev)
-        for dev in self.my_devices():
-            if dev.is_audio and dev not in out:
-                out.append(dev)
-        return out[:3]
-
     def find(self, path):
         return self.backend.devices.get(path)
 
     async def set_enabled(self, on):
+        self.settings.set("bluetooth", bool(on))
+        await self._switch(on)
+
+    async def _switch(self, on):
         await self.system.set_bluetooth(on)
         if on:
             await self._wait_for_adapter()
@@ -539,5 +531,4 @@ class Bluetooth:
             return
         await self.backend.remove(path)
         self._said.pop(path, None)
-        self.settings.forget_bluetooth(dev.address)
         self.events.toast(self.t("forgot_device"), "bluetooth")

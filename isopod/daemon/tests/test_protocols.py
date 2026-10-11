@@ -927,6 +927,11 @@ class Bluez(Backend):
         if self.errors.get(method):
             raise RuntimeError(self.errors[method].pop(0))
 
+    async def set_powered(self, on):
+        self.calls.append(("power", on))
+        self.powered = on
+        self._emit("adapter")
+
     async def discover(self, on):
         self.calls.append(("discover", on))
         self.discovering = on
@@ -1019,7 +1024,6 @@ class BluetoothTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.events.toasts, ["AirPods Pro 연결됨"])
         self.assertEqual(self.events.found, ["AirPods Pro"])
         self.assertEqual([d.name for d in self.bt.my_devices()], ["AirPods Pro"])
-        self.assertEqual(self.settings["recent_bluetooth"][0]["address"], "AC:12:2F:00:00:01")
 
     async def test_a_link_without_sound_is_not_a_connection(self):
         self.bluez.set(PODS, connected=True, paired=True)
@@ -1058,6 +1062,20 @@ class BluetoothTest(unittest.IsolatedAsyncioTestCase):
         await self.bt.activate(PODS)
         self.assertEqual(len(self.connects()), 1)
         self.assertEqual(self.events.toasts, ["AirPods Pro 연결됨"])
+
+    async def test_bluetooth_left_on_comes_back_after_a_boot(self):
+        await self.bt.set_enabled(True)
+        self.assertTrue(Settings(os.path.dirname(self.settings.path))["bluetooth"])
+        self.bluez.powered = False
+        self.bluez.calls.clear()
+        await self.bt._recover(settle=0)
+        self.assertEqual(self.bluez.calls, [("power", True)], "though ROCKNIX's setting is off again")
+
+    async def test_bluetooth_left_off_stays_off(self):
+        await self.bt.set_enabled(False)
+        self.bluez.calls.clear()
+        await self.bt._recover(settle=0)
+        self.assertEqual(self.bluez.calls, [])
 
     async def test_controllers_pair_first_and_connect_whole(self):
         await self.bt.activate(PAD)

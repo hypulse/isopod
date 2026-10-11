@@ -24,7 +24,8 @@ replaces the front end with a small shell built around your music.
 - **Videos** from `/storage/videos`, played by mpv: MP4, MKV, AVI, WebM, MOV and the rest.
   Subtitles beside the file (SRT, SMI, ASS, VTT) or inside it turn on by themselves, Korean
   first, and older Korean subtitle files read correctly. It remembers where you stopped.
-- **Bluetooth** headphones connect from one list, in Settings or the Control Center.
+- **Bluetooth** headphones connect from one list in Settings, and Bluetooth left on is on
+  again after a restart.
 - **Headphones**, wired or Bluetooth, take the sound when they arrive; with both, the one
   connected last plays. Unplugging or losing the one in use pauses music and videos before
   a note reaches the speaker.

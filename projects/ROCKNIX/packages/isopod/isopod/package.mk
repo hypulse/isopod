@@ -16,6 +16,13 @@ makeinstall_target() {
   cp ${ROOT}/isopod/system/sway.conf ${INSTALL}/usr/share/isopod/
   cp -r ${ROOT}/isopod/system/mpv ${INSTALL}/usr/share/isopod/
 
+  # ROCKNIX's chksysconfig reads a missing RetroArch config as lost settings and copies
+  # every default back over /storage/.config, at each boot of an image without RetroArch.
+  mkdir -p ${INSTALL}/usr/config/retroarch
+  for CFG in retroarch.cfg retroarch-core-options.cfg; do
+    echo "# isoPod has no RetroArch" >${INSTALL}/usr/config/retroarch/${CFG}
+  done
+
   # isopodd reads the buttons, the lid and the power key itself, and isoPod reports
   # nothing to ROCKNIX's install statistics.
   mkdir -p ${INSTALL}/etc/systemd/system

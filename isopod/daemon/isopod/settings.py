@@ -12,7 +12,7 @@ DEFAULTS = {
     "volumes": {},
     "pause_on_disconnect": True,
     "pause_on_unplug": True,
-    "recent_bluetooth": [],
+    "bluetooth": False,
 }
 
 
@@ -30,12 +30,3 @@ class Settings:
             return
         self.data[key] = value
         save_json(self.path, self.data)
-
-    def remember_bluetooth(self, address, name):
-        recent = [d for d in self.data["recent_bluetooth"] if d["address"] != address]
-        recent.insert(0, {"address": address, "name": name})
-        self.set("recent_bluetooth", recent[:6])
-
-    def forget_bluetooth(self, address):
-        self.set("recent_bluetooth",
-                 [d for d in self.data["recent_bluetooth"] if d["address"] != address])
