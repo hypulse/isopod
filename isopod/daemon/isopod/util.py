@@ -105,12 +105,15 @@ def matches(query, text):
     return bool(bare) and all(c in CHOSEONG for c in bare) and bare in "".join(map(_initial, t.replace(" ", "")))
 
 
+EMPTY = "%00"  # a part that is there but blank: a song without an album, an artist without a name
+
+
 def enc(*parts):
-    return "/".join(quote(str(p), safe="") for p in parts)
+    return "/".join(quote(str(p), safe="") or EMPTY for p in parts)
 
 
 def split_path(path):
-    return [unquote(p) for p in path.strip("/").split("/") if p]
+    return ["" if p == EMPTY else unquote(p) for p in path.strip("/").split("/") if p]
 
 
 def fmt_duration(seconds):

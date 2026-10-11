@@ -13,7 +13,7 @@ from isopod.battery import Battery  # noqa: E402
 from isopod.bluetooth import A2DP_SINK, Backend, Bluetooth, Device, RavelBackend  # noqa: E402
 from isopod.mpd import MPD, filter_expr, quote, records, values  # noqa: E402
 from isopod.music import Music  # noqa: E402
-from isopod.pages import VIDEO_EXTS, folder_listing  # noqa: E402
+from isopod.pages import VIDEO_EXTS, Pages, folder_listing  # noqa: E402
 from isopod.apps import AppSpec, Apps  # noqa: E402
 from isopod.i18n import Translator  # noqa: E402
 from isopod.lyrics import decode, parse_lrc  # noqa: E402
@@ -46,6 +46,10 @@ class UtilTest(unittest.TestCase):
     def test_path_roundtrip(self):
         path = "/music/album/" + enc("AC/DC", "Back in Black")
         self.assertEqual(split_path(path), ["music", "album", "AC/DC", "Back in Black"])
+
+    def test_a_blank_name_keeps_its_place_in_a_path(self):
+        self.assertEqual(split_path("/music/album/" + enc("Blur", "")), ["music", "album", "Blur", ""])
+        self.assertEqual(split_path("/music/album/" + enc("", "Parklife")), ["music", "album", "", "Parklife"])
 
     def test_duration(self):
         self.assertEqual(fmt_duration(65), "1:05")
@@ -144,6 +148,48 @@ class CoverFlowOrderTest(unittest.IsolatedAsyncioTestCase):
         order = [key for key, _ in music.coverflow_albums()]
         self.assertEqual(order, [("Aurora Lane", "Night Drive"), ("Aurora Lane", "Paper Planes"),
                                  ("The Owls", "Quiet Hours"), ("나무", "가을")])
+
+
+class NoAlbumTest(unittest.IsolatedAsyncioTestCase):
+    """Songs whose tags name no album make none, and an album without an artist still opens."""
+
+    async def test_songs_without_an_album_and_albums_without_an_artist(self):
+        class NoPictures:
+            async def picture(self, uri):
+                return None
+
+        class NoApp:
+            t = Translator("en")
+            state = State(lambda snap: None)
+
+            def page_changed(self, *paths):
+                pass
+
+        def song(file, title, artist, album):
+            return {"file": file, "title": title, "artist": artist, "albumartist": artist, "album": album,
+                    "genre": "", "disc": 0, "track": 0}
+
+        app = NoApp()
+        app.music = Music(NoPictures(), app.state, tempfile.mkdtemp())
+        app.music.songs = [song("a.mp3", "Loose", "Blur", ""), song("b.mp3", "Tracy Jacks", "Blur", "Parklife"),
+                           song("c.mp3", "Nameless", "", ""), song("d.mp3", "Track 1", "", "Mixtape")]
+        pages = Pages(app)
+
+        async def titles(path):
+            return [i["title"] for i in (await pages.build(path))["items"]]
+
+        async def opened(path, key):
+            return await titles((await pages.activate(path, key))["push"])
+
+        self.assertEqual(await titles("/music/coverflow"), ["Mixtape", "Parklife"])
+        self.assertEqual(await titles("/music/albums"), ["Mixtape", "Parklife"])
+        self.assertEqual(await opened("/music/albums", "al:0"), ["Track 1"], "no artist, and it opens")
+        self.assertEqual(await opened("/music/albums", "al:1"), ["Tracy Jacks"])
+        blur = (await pages.activate("/music/artists", "a:Blur"))["push"]
+        self.assertEqual(await titles(blur), ["All Songs", "Parklife"])
+        self.assertEqual(await opened(blur, "all"), ["Loose", "Tracy Jacks"], "the loose song is with its artist")
+        nobody = (await pages.activate("/music/artists", "a:"))["push"]
+        self.assertEqual(await opened(nobody, "all"), ["Nameless", "Track 1"])
 
 
 class CoverArtTest(unittest.IsolatedAsyncioTestCase):

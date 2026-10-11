@@ -222,9 +222,11 @@ class Music:
         return artists[:limit], albums[:limit], songs[:limit]
 
     def albums(self, artist=None, genre=None):
+        """Albums by name, each with one of its songs. Songs that name no album do not
+        make one: they are under Songs and under their artist."""
         found = {}
         for s in self.songs:
-            if artist is not None and s["albumartist"] != artist:
+            if not s["album"] or (artist is not None and s["albumartist"] != artist):
                 continue
             if genre is not None and s["genre"] != genre:
                 continue

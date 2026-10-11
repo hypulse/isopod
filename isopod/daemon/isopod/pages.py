@@ -329,7 +329,7 @@ class Pages:
         song = songs[int(key[1:])]
         options = [{"key": "next", "title": self.t("play_next")},
                    {"key": "later", "title": self.t("add_to_up_next")}]
-        if rest[0] != "album":
+        if rest[0] != "album" and song["album"]:
             options.append({"key": "album", "title": self.t("go_to_album")})
 
         async def choose(choice):
