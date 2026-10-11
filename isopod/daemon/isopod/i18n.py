@@ -24,7 +24,6 @@ STRINGS = {
     "added_up_next": ("다음 재생에 추가됨", "Added to Up Next"),
     "go_to_album": ("앨범으로 이동", "Go to Album"),
 
-    "of": ("{pos} / {count}", "{pos} of {count}"),
     "nothing_playing": ("재생 중인 항목이 없어요", "Nothing Playing"),
     "no_lyrics": ("가사가 없어요", "No Lyrics"),
     "shuffle": ("셔플", "Shuffle"),
@@ -127,7 +126,7 @@ class Translator:
         return text.format(**fmt) if fmt else text
 
     def shell_strings(self):
-        keys = ("now_playing", "of", "nothing_playing", "cancel", "ok", "done", "space",
+        keys = ("now_playing", "nothing_playing", "cancel", "ok", "done", "space",
                 "volume", "brightness", "shuffle", "repeat", "repeat_one", "on", "off",
                 "opening", "searching", "connecting", "empty_list", "clock_am", "clock_pm")
         return {k: self(k) for k in keys}

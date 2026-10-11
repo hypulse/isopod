@@ -11,9 +11,9 @@ replaces the front end with a small shell built around your music.
 - **Music** from `/storage/music`: Cover Flow, Playlists, Artists, Albums, Songs, Genres,
   Up Next and Search. Playback carries on in the background, whatever else is open, and a
   sleep timer in Now Playing stops it for you.
-- **Now Playing** shows where the song is in the queue, its cover, title, artist and
-  album, and a line with its year, genre and kind of file. With timed lyrics the line
-  being sung and the one after it stand under the cover; without, the cover's reflection.
+- **Now Playing** shows the song's cover over its reflection, its title, artist and album,
+  and a line with its year, genre and kind of file. With timed lyrics the line being sung
+  and the one after it stand under the cover.
 - **Lyrics**, all of them, are a press of Y away: timed lyrics follow the line being sung,
   plain ones scroll. They come from an `.lrc` or `.txt` file beside the song and named
   like it (`Song.mp3`, `Song.lrc`), or from the song's own tags.

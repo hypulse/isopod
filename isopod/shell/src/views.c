@@ -270,9 +270,8 @@ static void draw_reflection(const char *path, int x, int y, int size, int depth)
                 (SDL_Color){255, 255, 255, 0});
 }
 
-/* Now Playing: where the song is in the queue, the cover, what the song is, and under
- * them either the line being sung with the one after it or, when the song has no timed
- * words, the cover's reflection. */
+/* Now Playing: the cover over its reflection, what the song is, and under them the line
+ * being sung with the one after it. A song without timed words has a larger cover. */
 static void draw_nowplaying(Page *p, int x)
 {
     Player *pl = &app.status.player;
@@ -280,14 +279,6 @@ static void draw_nowplaying(Page *p, int x)
         draw_text_center(FONT_SEMIBOLD, FONT_NP_LINE, S("nothing_playing", ""), x + SCREEN_W / 2,
                          CONTENT_Y + CONTENT_H / 2 - 16, C_TEXT2, SCREEN_W - 80);
         return;
-    }
-    if (pl->pos > 0 && pl->count > 0) {
-        char pos[16], count[16], some[64], place[64];
-        snprintf(pos, sizeof(pos), "%d", pl->pos);
-        snprintf(count, sizeof(count), "%d", pl->count);
-        fill_slot(some, sizeof(some), S("of", "{pos} / {count}"), "{pos}", pos);
-        fill_slot(place, sizeof(place), some, "{count}", count);
-        draw_text(FONT_REGULAR, FONT_SMALL, place, x + 36, CONTENT_Y + 12, C_TEXT2, 240);
     }
     int ix = x + SCREEN_W - 36;
     if (pl->repeat) {
@@ -298,8 +289,10 @@ static void draw_nowplaying(Page *p, int x)
         draw_icon("shuffle", ix - 24, CONTENT_Y + 14, C_ACCENT);
 
     bool words = p->count > 0 && p->time_count > 0;
-    const int art = words ? 220 : 272, ax = x + 36, ay = CONTENT_Y + 44;
+    const int art = words ? 232 : 272, ax = x + 36, ay = CONTENT_Y + (words ? 22 : 34);
+    const int mirror = words ? 44 : 52;
     draw_image(pl->art, "art-default", ax, ay, art, 0);
+    draw_reflection(pl->art, ax, ay + art, art, mirror);
     Rgba edge = RGBA(0, 0, 0, 26);
     fill_rect(ax, ay, art, 1, edge);
     fill_rect(ax, ay + art - 1, art, 1, edge);
@@ -330,7 +323,7 @@ static void draw_nowplaying(Page *p, int x)
             next++;
         const char *sung = cur >= 0 ? p->items[cur].title : NULL;
         const char *coming = next < p->count ? p->items[next].title : NULL;
-        int cx = x + SCREEN_W / 2, w = SCREEN_W - 72, ly = ay + art + 18;
+        int cx = x + SCREEN_W / 2, w = SCREEN_W - 72, ly = ay + art + mirror + 10;
         if (sung && *sung) {
             int rows = draw_text_wrap_center(FONT_BOLD, 24, sung, cx, ly, w, 34, 2, C_TEXT);
             if (rows < 2 && coming)
@@ -338,8 +331,6 @@ static void draw_nowplaying(Page *p, int x)
         } else if (coming) {
             draw_text_center(FONT_SEMIBOLD, 21, coming, cx, ly + 19, C_TEXT3, w);
         }
-    } else {
-        draw_reflection(pl->art, ax, ay + art + 2, art, 52);
     }
 
     draw_progress_row(pl, SCREEN_H - 42);
