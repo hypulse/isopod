@@ -30,7 +30,8 @@ replaces the front end with a small shell built around your music.
   restart. A headset's own volume buttons count.
 - **Wi-Fi** remembers every network you join.
 - **Multitasking**: a video keeps its place. Home pauses it where it is, and the home
-  screen lists it so you can pick it up again.
+  screen lists it so you can pick it up again. Music and a video never sound together:
+  starting one pauses the other.
 - **Lid and power**: closing the lid turns the screen off and keeps the music playing,
   and the app in front pauses until the lid opens. With nothing playing the device
   sleeps, and opening the lid wakes it. Videos keep the screen on while they play.
@@ -66,9 +67,11 @@ In Now Playing, ← and → skip 10 seconds, ↑ and ↓ change the volume, and 
 
 The on-screen keyboard goes around its edges the way lists do.
 
-A video gets the buttons while it is in front, except Home and Volume, and follows the
-same idea: A pauses, B leaves and remembers the spot, ← and → skip 10 seconds, and ↑ and ↓
-skip a minute.
+A video follows Now Playing: A or Start pauses, B leaves and remembers the spot, ← and →
+skip 10 seconds and keep skipping while held, ↑ and ↓ change the volume. X switches the
+audio track, Y the subtitles (as Y is the lyrics of a song), and Select shows where the
+film is. A headset's buttons act on the video while it is in front and on the music
+otherwise, and a paused video lets the screen go dark like any list.
 
 ## How it fits together
 

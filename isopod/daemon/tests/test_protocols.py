@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import json
 import os
 import sys
 import tempfile
@@ -8,6 +9,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from isopod.app import App  # noqa: E402
 from isopod.audio import Audio, FakeAudio, _sink  # noqa: E402
 from isopod.battery import Battery  # noqa: E402
 from isopod.bluetooth import A2DP_SINK, Backend, Bluetooth, Device, RavelBackend  # noqa: E402
@@ -17,6 +19,7 @@ from isopod.pages import VIDEO_EXTS, Pages, folder_listing  # noqa: E402
 from isopod.apps import AppSpec, Apps  # noqa: E402
 from isopod.i18n import Translator  # noqa: E402
 from isopod.lyrics import decode, parse_lrc  # noqa: E402
+from isopod.main import parse_args  # noqa: E402
 from isopod.power import Power  # noqa: E402
 from isopod.settings import Settings  # noqa: E402
 from isopod.state import State  # noqa: E402
@@ -583,6 +586,117 @@ class RoutesTest(unittest.IsolatedAsyncioTestCase):
         self.plug(True)
         await self.quiet()
         self.assertEqual(self.fake.routes["headphones"]["level"], 55)
+
+
+class Mpv:
+    """mpv as far as its JSON socket goes: it takes commands and reports when it is paused."""
+
+    def __init__(self, path):
+        self.path = path
+        self.commands = []
+        self.watchers = []
+
+    async def start(self):
+        self.server = await asyncio.start_unix_server(self._client, self.path)
+
+    async def _client(self, reader, writer):
+        while line := await reader.readline():
+            command = json.loads(line)["command"]
+            self.commands.append(command)
+            if command[0] == "observe_property":
+                self.watchers.append(writer)
+            writer.write(b'{"error": "success"}\n')
+            await writer.drain()
+        writer.close()
+
+    async def pause(self, paused):
+        for writer in self.watchers:
+            writer.write(json.dumps({"event": "property-change", "id": 1, "name": "pause",
+                                     "data": paused}).encode() + b"\n")
+            await writer.drain()
+        await asyncio.sleep(0.05)
+
+
+class VideoTest(unittest.IsolatedAsyncioTestCase):
+    """A video in front: the gamepad is mpv's own, and the rest reaches it through isopodd."""
+
+    async def asyncSetUp(self):
+        d = tempfile.mkdtemp()
+        self.mpv = Mpv(os.path.join(d, "mpv.sock"))
+        await self.mpv.start()
+        self.app = App(parse_args(["--sim", "--socket", os.path.join(d, "s"), "--config", d, "--cache", d,
+                                   "--data", d, "--mpd", os.path.join(d, "mpd")]))
+        self.app.audio.SETTLE = 0.02
+        await self.app.audio.start()
+        await asyncio.sleep(0.1)
+        self.toggled = []
+
+        async def toggle():
+            self.toggled.append("music")
+        self.app.music.toggle = toggle
+
+    async def asyncTearDown(self):
+        self.mpv.server.close()
+
+    def watch(self):
+        """What launching does on a device, where the simulator only notes the launch."""
+        apps = self.app.apps
+        apps.sim = False
+        film = {"title": "Film", "unit": "isopod-video-2", "workspace": 2, "frozen": False, "app_id": "a",
+                "media": True, "args": [], "awake": 0, "control": self.mpv.path, "playing": True,
+                "used_at": 0.0}
+        apps.running["video"], apps.front = film, "video"
+        return film
+
+    async def test_up_and_down_are_the_volume_and_it_shows_over_the_film(self):
+        self.watch()
+        before = self.app.state.get("volume")["level"]
+        await self.app.key("up")
+        await self.app.key("up", repeat=True)
+        await self.app.key("left")
+        self.assertEqual(self.app.state.get("volume")["level"], before + 10)
+        shown = [c for c in self.mpv.commands if "show-text" in c]
+        self.assertEqual(len(shown), 2)
+        self.assertIn("음량", shown[0][2])
+
+    async def test_a_headsets_buttons_go_to_the_film_in_front_else_to_the_music(self):
+        await self.app.media("toggle")
+        self.assertEqual((self.toggled, self.mpv.commands), (["music"], []))
+        film = self.watch()
+        for action in ("toggle", "pause", "forward"):
+            await self.app.media(action)
+        self.assertEqual(self.mpv.commands, [["cycle", "pause"], ["set_property", "pause", True], ["seek", 15]])
+        film["frozen"] = True
+        await self.app.media("play")
+        self.assertEqual((len(self.mpv.commands), self.toggled), (3, ["music"]), "a frozen film hears nothing")
+
+    async def test_a_film_sent_to_the_back_is_paused_and_goes_on_when_it_returns(self):
+        film = self.watch()
+        await self.app.apps.home()
+        self.assertEqual((film["frozen"], self.mpv.commands), (True, [["set_property", "pause", True]]))
+        await self.app.resume_app("video")
+        self.assertEqual((film["frozen"], self.mpv.commands[-1]), (False, ["set_property", "pause", False]))
+
+    async def test_a_film_paused_by_hand_stays_paused(self):
+        film = self.watch()
+        film["playing"] = False
+        await self.app.apps.home()
+        await self.app.resume_app("video")
+        self.assertEqual(self.mpv.commands, [])
+        await self.app.apps.set_dark(True)
+        await self.app.apps.set_dark(False)
+        self.assertEqual(self.mpv.commands, [])
+
+    async def test_a_paused_film_lets_the_screen_go(self):
+        film = self.watch()
+        task = asyncio.ensure_future(self.app.apps._watch_playback("video", film))
+        await asyncio.sleep(0.1)
+        self.assertEqual(self.app.screen_timeout(60), 0, "playing, it holds the screen")
+        await self.mpv.pause(True)
+        self.assertEqual(self.app.screen_timeout(60), 60)
+        await self.mpv.pause(False)
+        self.assertEqual(self.app.screen_timeout(60), 0)
+        task.cancel()
 
 
 class Late(FakeAudio):

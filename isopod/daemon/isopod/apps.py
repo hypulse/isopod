@@ -46,6 +46,14 @@ async def _mpv(path, command):
         pass
 
 
+# What a headset's buttons mean to a video, as they mean it to music.
+MPV_MEDIA = {
+    "toggle": ["cycle", "pause"], "play": ["set_property", "pause", False],
+    "pause": ["set_property", "pause", True], "forward": ["seek", 15], "rewind": ["seek", -15],
+    "next": ["add", "chapter", 1], "prev": ["add", "chapter", -1],
+}
+
+
 def _available_mb():
     try:
         with open("/proc/meminfo") as f:
@@ -57,9 +65,20 @@ def _available_mb():
     return None
 
 
+def volume_osd(label, level, width=180):
+    """The volume, drawn by mpv over a video: a word and a bar in libass's own markup,
+    since the shell and its HUD are a workspace away."""
+    filled = round(width * max(0, min(100, level)) / 100)
+    bar = "".join(f"{{\\1c&H{colour}&}}m 0 0 l {w} 0 {w} 6 0 6 " for colour, w in
+                  (("FFFFFF", filled), ("707070", width - filled)) if w)
+    return (f"${{osd-ass-cc/0}}{{\\an8\\fs18\\bord1\\shad0}}{label}\\N"
+            f"{{\\fs6}}\\N{{\\bord0.6\\3c&H202020&\\p1}}{bar}{{\\p0}}")
+
+
 class AppSpec:
-    """`awake` holds the screen: 0 keeps it lit while the app is in front, N stretches the
-    timeout to at least N seconds, None leaves it to the setting."""
+    """`awake` holds the screen: 0 keeps it lit while the app is in front (and, for one that
+    plays, playing), N stretches the timeout to at least N seconds, None leaves it to the
+    setting."""
 
     def __init__(self, key, title_key, argv, needs=None, pauses_music=False, env=None, awake=None,
                  control=None):
@@ -131,8 +150,9 @@ class Apps:
         return bool(app and app["media"])
 
     def front_awake(self):
+        """A video holds the screen while it plays; paused, it lets the screen go like a list."""
         app = self.running.get(self.front)
-        return app["awake"] if app else None
+        return app["awake"] if app and app["playing"] else None
 
     async def pause_media(self):
         """Pause a playing video. One frozen in the background is silent and stays as it is."""
@@ -140,19 +160,76 @@ class Apps:
             if app["control"] and not app["frozen"] and not self.sim:
                 await _mpv(app["control"], ["set_property", "pause", True])
 
+    async def _front(self, command):
+        """One command for the video in front. Its own keys are the gamepad's; everything
+        else that reaches it comes through here."""
+        app = self.running.get(self.front)
+        if app and app["control"] and not app["frozen"] and not self.sim:
+            await _mpv(app["control"], command)
+
+    async def media(self, action):
+        if action in MPV_MEDIA:
+            await self._front(MPV_MEDIA[action])
+
+    async def say(self, text, ms=1200):
+        await self._front(["expand-properties", "show-text", text, ms])
+
+    async def _watch_playback(self, key, app):
+        """Follow whether a video plays or is paused, for as long as it runs."""
+        for _ in range(50):
+            try:
+                reader, writer = await asyncio.open_unix_connection(app["control"])
+                break
+            except OSError:
+                await asyncio.sleep(0.2)
+        else:
+            return
+        try:
+            writer.write(b'{"command": ["observe_property", 1, "pause"]}\n')
+            await writer.drain()
+            while line := await reader.readline():
+                try:
+                    event = json.loads(line)
+                except ValueError:
+                    continue
+                if event.get("event") == "property-change" and event.get("name") == "pause":
+                    if self.running.get(key) is not app:
+                        break
+                    app["playing"] = not event.get("data")
+                    self.events.playback_changed()
+        except OSError:
+            pass
+        finally:
+            writer.close()
+
     async def _signal(self, app, verb):
         if self.runner == "direct":
             self._group(app, signal.SIGSTOP if verb == "freeze" else signal.SIGCONT)
         elif not self.sim:
             await run("systemctl", verb, f"{app['unit']}.service")
 
+    async def _park(self, app):
+        """Freeze an app where it is. A playing video is paused first: it is then silent
+        beside the music whatever the freezer does, and its sound starts clean when it
+        comes back."""
+        if app["control"] and app["playing"] and not self.sim:
+            app["held"] = True
+            await _mpv(app["control"], ["set_property", "pause", True])
+        await self._signal(app, "freeze")
+        app["frozen"] = True
+
+    async def _unpark(self, app):
+        await self._signal(app, "thaw")
+        app["frozen"] = False
+        if app.pop("held", False) and not self.sim:
+            await _mpv(app["control"], ["set_property", "pause", False])
+
     async def set_dark(self, dark):
         """A dark screen pauses the app in front; light brings it back where it was."""
         async with self._lock:
             app = self.running.get(self.front)
             if app and app["frozen"] != dark:
-                await self._signal(app, "freeze" if dark else "thaw")
-                app["frozen"] = dark
+                await (self._park(app) if dark else self._unpark(app))
 
     async def _make_room(self):
         """Like a phone: when too many apps wait in the background or memory runs low,
@@ -189,9 +266,12 @@ class Apps:
             argv.insert(1, f"--wayland-app-id={app_id}")
         env = {**self.env, **spec.env, "SDL_VIDEO_WAYLAND_WMCLASS": app_id, "SDL_VIDEO_X11_WMCLASS": app_id,
                "SDL_APP_ID": app_id}
-        self.running[spec.key] = {"title": title, "unit": unit, "workspace": workspace, "frozen": False,
-                                  "app_id": app_id, "media": spec.pauses_music, "args": list(extra_args),
-                                  "awake": spec.awake, "control": spec.control, "used_at": time.monotonic()}
+        app = {"title": title, "unit": unit, "workspace": workspace, "frozen": False, "app_id": app_id,
+               "media": spec.pauses_music, "args": list(extra_args), "awake": spec.awake,
+               "control": spec.control, "playing": True, "used_at": time.monotonic()}
+        self.running[spec.key] = app
+        if spec.control and not self.sim:
+            spawn(self._watch_playback(spec.key, app))
         if self.sim:
             log.info("sim: launch %s", argv)
         elif self.runner == "direct":
@@ -243,8 +323,7 @@ class Apps:
         if app:
             async with self._lock:
                 if not app["frozen"]:
-                    await self._signal(app, "freeze")
-                app["frozen"] = True
+                    await self._park(app)
                 app["used_at"] = time.monotonic()
         self.front = None
         if not self.sim:
@@ -257,8 +336,7 @@ class Apps:
         if not app:
             return
         async with self._lock:
-            await self._signal(app, "thaw")
-            app["frozen"] = False
+            await self._unpark(app)
             app["used_at"] = time.monotonic()
         if not self.sim:
             await run("swaymsg", "workspace", "number", str(app["workspace"]))

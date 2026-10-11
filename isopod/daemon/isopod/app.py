@@ -3,7 +3,7 @@ import logging
 import os
 
 from . import __version__
-from .apps import Apps, catalog
+from .apps import Apps, catalog, volume_osd
 from .audio import Audio, FakeAudio, Pactl
 from .battery import Battery
 from .bluetooth import Bluetooth, FakeBackend, RavelBackend
@@ -143,6 +143,13 @@ class App:
             return setting
         return 0 if hold == 0 else max(setting, hold)
 
+    def watching(self):
+        return self.power.screen_on
+
+    def playback_changed(self):
+        """The video in front was paused or went on: the screen's hold changes with it."""
+        self.power.poke()
+
     def app_failed(self, title):
         self.toast(self.t("app_failed", name=title))
 
@@ -199,13 +206,21 @@ class App:
             self.server.broadcast({"event": "key", "key": "home"})
             return
         if self.apps.front:
+            # A video has the gamepad to itself, but up and down are the volume there as
+            # they are in Now Playing, and the volume is isoPod's.
+            if name in ("up", "down") and self.apps.front_plays_media:
+                await self.volume(1 if name == "up" else -1)
             return
         self.server.broadcast({"event": "key", "key": name, "repeat": repeat})
 
     async def volume(self, delta):
         self.power.activity()
         level = await self.audio.change(delta * Audio.STEP)
-        if level is not None and not self.apps.front:
+        if level is None:
+            return
+        if self.apps.front:
+            await self.apps.say(volume_osd(self.t("volume"), level))
+        else:
             self.server.broadcast({"event": "hud", "kind": "volume", "value": level,
                                    "output": self.state.get("volume")["output"]})
 
@@ -213,7 +228,9 @@ class App:
         await self.power.power_key(pressed)
 
     async def media(self, action):
+        """A headset's buttons go to what is in front: a video, else the music."""
         if self.apps.front_plays_media:
+            await self.apps.media(action)
             return
         m = self.music
         if action == "toggle":
