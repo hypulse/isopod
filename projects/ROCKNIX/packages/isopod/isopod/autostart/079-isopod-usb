@@ -11,9 +11,9 @@ grep -qs " /etc/umtprd/umtprd.conf " /proc/mounts ||
 
 # That mode is file transfer, every boot. In ROCKNIX's "disabled" the port is a USB host
 # and puts 5 V on the cable: a computer plugged in then charges from isoPod and sees no
-# device. ROCKNIX's network mode is kept where someone chose it.
-CONF=/storage/.cache/usbgadget/usbgadget.conf
-if ! grep -qs "^USB_MODE=cdc" "${CONF}"; then
-  mkdir -p /storage/.cache/usbgadget
-  echo "USB_MODE=mtp" >"${CONF}"
-fi
+# device. A file named usb-network in the update folder, which the cable reaches, asks for
+# ROCKNIX's network mode instead, for SSH at 169.254.170.2 where there is no Wi-Fi.
+MODE=mtp
+[ -e /storage/.update/usb-network ] && MODE=cdc
+mkdir -p /storage/.cache/usbgadget
+echo "USB_MODE=${MODE}" >/storage/.cache/usbgadget/usbgadget.conf
