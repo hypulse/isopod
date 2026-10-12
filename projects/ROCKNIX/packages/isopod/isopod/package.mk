@@ -29,6 +29,10 @@ makeinstall_target() {
   for UNIT in input.service rocknix-report-stats.service rocknix-report-stats.timer; do
     ln -sf /dev/null ${INSTALL}/etc/systemd/system/${UNIT}
   done
+
+  # The hardware database is compiled anew at every boot, 2.6 s in which nothing else
+  # starts. It serves keyboards, mice and USB names, none of which isoPod has.
+  ln -sf /dev/null ${INSTALL}/etc/systemd/system/systemd-hwdb-update.service
 }
 
 post_install() {
