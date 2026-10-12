@@ -120,6 +120,10 @@ The recipes that put these in the image are in `projects/ROCKNIX/packages/isopod
    folders on first boot and shows the card as an `SD Card` folder in each library. With
    the card in the device, a USB cable to a computer reaches the same folders.
 
+To update an installed isoPod, take the `.tar` from `isopod-H700-update` of a later run,
+copy it to the `Update` storage over the cable (or to `/storage/.update` over SSH) and
+restart.
+
 ## Build
 
 The image builds the same way ROCKNIX does, in its build container. isoPod ships no 32-bit
