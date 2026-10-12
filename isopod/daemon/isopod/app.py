@@ -14,6 +14,7 @@ from .mpd import MPD
 from .music import Music
 from .pages import Pages
 from .power import Power
+from .radio import Radio
 from .settings import Settings
 from .state import State
 from .system import System
@@ -40,6 +41,10 @@ class App:
         self.music = Music(MPD(args.mpd, args.mpd_port), self.state, args.cache, music_dir=args.music)
         self.music.song_changed = lambda: self.page_changed("/nowplaying", "/nowplaying/lyrics")
         self.music.favorites_changed = lambda: self.page_changed("/music/*")
+        self.music.stream_failed = lambda: self.toast(self.t("radio_unreachable"), "wifi")
+        self.radio = Radio(args.config, args.cache)
+        self.radio.changed = lambda: self.page_changed("/radio/*")
+        self.music.station_favorite = lambda station: self.radio.is_favorite(station.get("uuid"))
         self.bluetooth = Bluetooth(FakeBackend() if self.sim else RavelBackend(),
                                    self.state, self.settings, self.t, self, self.system)
         # ROCKNIX switches Wi-Fi by its own setting at boot and on every wake.
@@ -56,6 +61,7 @@ class App:
                          runner=runner)
         self.catalog = catalog(args.data, sim=runner == "sim", run_dir=os.path.dirname(args.socket))
         self.pages = Pages(self)
+        self.music.step_station = self.pages.step_station
         self.input = None if self.sim else Input(self)
         self._last_player_state = "stop"
         self.ui_ready_at = None

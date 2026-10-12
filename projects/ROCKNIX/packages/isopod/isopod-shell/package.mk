@@ -14,7 +14,7 @@ PKG_TOOLCHAIN="make"
 unpack() {
   mkdir -p ${PKG_BUILD}
   cp -a ${ROOT}/isopod/shell/. ${PKG_BUILD}/
-  rm -f ${PKG_BUILD}/isopod-shell ${PKG_BUILD}/isopod-splash
+  rm -f ${PKG_BUILD}/isopod-shell ${PKG_BUILD}/isopod-splash ${PKG_BUILD}/isopod-thumb
 }
 
 make_target() {
@@ -23,6 +23,6 @@ make_target() {
 
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/bin ${INSTALL}/usr/share/isopod
-  cp ${PKG_BUILD}/isopod-shell ${PKG_BUILD}/isopod-splash ${INSTALL}/usr/bin/
+  cp ${PKG_BUILD}/isopod-shell ${PKG_BUILD}/isopod-splash ${PKG_BUILD}/isopod-thumb ${INSTALL}/usr/bin/
   cp -r ${PKG_BUILD}/assets/. ${INSTALL}/usr/share/isopod/
 }

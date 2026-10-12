@@ -89,7 +89,9 @@ static void draw_row(Page *p, int i, int x, int y, int w, bool selected)
     int left = x + PAD_X, right = x + w - PAD_X;
 
     if (p->art_rows) {
-        draw_image(it->art, "art-default", left, y + (h - ART_THUMB) / 2, ART_THUMB, 0);
+        bool radio = !SDL_strncmp(p->path, "/radio", 6);
+        draw_image(it->art, radio ? "art-radio" : "art-default", left, y + (h - ART_THUMB) / 2, ART_THUMB,
+                   radio ? IMAGE_FIT : 0);
         left += ART_THUMB + 14;
     } else if (it->icon) {
         const char *name = device_icon(it->icon);
@@ -226,6 +228,21 @@ static void draw_progress_row(Player *pl, int y)
         wants_frame = true;
         return;
     }
+    if (!strcmp(pl->kind, "radio")) {
+        /* A station has no length: it is being connected to, or it is live, with a dot
+         * that is red while it is on the air. */
+        const char *words = S(pl->buffering ? "connecting" : "live", "");
+        int tw = text_width(FONT_SEMIBOLD, FONT_SMALL, words), tx = SCREEN_W / 2 - tw / 2;
+        if (pl->buffering) {
+            draw_spinner(tx - 18, y, C_TEXT2);
+            tx += 4;
+            wants_frame = true;
+        } else {
+            fill_round(tx - 22, y - 7, 14, 14, 7, !strcmp(pl->state, "play") ? C_RED : C_TEXT3);
+        }
+        draw_text(FONT_SEMIBOLD, FONT_SMALL, words, tx, y - 13, C_TEXT2, 0);
+        return;
+    }
     double e = live_elapsed(pl);
     char a[16], b[16];
     fmt_time(e, a, sizeof(a));
@@ -262,9 +279,10 @@ static int lyric_now(Page *p, double elapsed)
 }
 
 /* Under a cover that has the room, its reflection, fading out the way it did on the iPod. */
-static void draw_reflection(const char *path, int x, int y, int size, int depth)
+static void draw_reflection(const char *path, const char *fallback, int radius, int x, int y, int size,
+                            int depth)
 {
-    SDL_Texture *t = image_or(path, "art-default", size, 0);
+    SDL_Texture *t = image_or(path, fallback, size, radius);
     if (!t)
         return;
     SDL_FPoint top[2] = {{(float)x, (float)y}, {(float)(x + size), (float)y}};
@@ -285,18 +303,22 @@ static void draw_nowplaying(Page *p, int x)
                          CONTENT_Y + CONTENT_H / 2 - 16, C_TEXT2, SCREEN_W - 80);
         return;
     }
+    /* A station's cover is its logo, whole, on the page's white; shuffle and repeat are a
+     * song's, and the line under its name, what it says is on, may take two. */
+    bool radio = !strcmp(pl->kind, "radio");
+    const char *blank = radio ? "art-radio" : "art-default";
     int ix = x + SCREEN_W - 36;
-    if (pl->repeat) {
+    if (pl->repeat && !radio) {
         draw_icon(pl->single ? "repeat-one" : "repeat", ix - 24, CONTENT_Y + 14, C_ACCENT);
         ix -= 34;
     }
-    if (pl->shuffle)
+    if (pl->shuffle && !radio)
         draw_icon("shuffle", ix - 24, CONTENT_Y + 14, C_ACCENT);
 
     bool words = p->count > 0 && p->time_count > 0;
     const int art = 232, mirror = 44, ax = x + 36, ay = CONTENT_Y + 22;
-    draw_image(pl->art, "art-default", ax, ay, art, 0);
-    draw_reflection(pl->art, ax, ay + art, art, mirror);
+    draw_image(pl->art, blank, ax, ay, art, radio ? IMAGE_FIT : 0);
+    draw_reflection(pl->art, blank, radio ? IMAGE_FIT : 0, ax, ay + art, art, mirror);
     Rgba edge = RGBA(0, 0, 0, 26);
     fill_rect(ax, ay, art, 1, edge);
     fill_rect(ax, ay + art - 1, art, 1, edge);
@@ -307,13 +329,16 @@ static void draw_nowplaying(Page *p, int x)
     int title_lines = text_width(FONT_BOLD, FONT_NP_TITLE, pl->title) > tw ? 2 : 1;
     bool has_artist = pl->artist && *pl->artist, has_album = pl->album && *pl->album;
     bool has_note = p->note && *p->note;
-    int block = title_lines * 38 + 8 + (has_artist ? 32 : 0) + (has_album ? 32 : 0) + (has_note ? 34 : 0);
+    bool two = has_artist && radio && wrap_count(FONT_REGULAR, FONT_NP_LINE, pl->artist, tw, 2) > 1;
+    int artist_h = has_artist ? (two ? 64 : 32) : 0;
+    int block = title_lines * 38 + 8 + artist_h + (has_album ? 32 : 0) + (has_note ? 34 : 0);
     int ty = ay + art / 2 - block / 2;
     ty += draw_text_wrap(FONT_BOLD, FONT_NP_TITLE, pl->title, tx, ty, tw, 38, 2, C_TEXT) * 38 + 8;
-    if (has_artist) {
+    if (two)
+        draw_text_wrap(FONT_REGULAR, FONT_NP_LINE, pl->artist, tx, ty, tw, 32, 2, C_TEXT);
+    else if (has_artist)
         draw_text(FONT_REGULAR, FONT_NP_LINE, pl->artist, tx, ty, C_TEXT, tw);
-        ty += 32;
-    }
+    ty += artist_h;
     if (has_album) {
         draw_text(FONT_REGULAR, FONT_NP_LINE, pl->album, tx, ty, C_TEXT2, tw);
         ty += 32;
@@ -498,6 +523,7 @@ typedef struct {
 
 static const Tone TONES[] = {
     {"music", RGB(255, 94, 108), RGB(214, 36, 82)},      {"video", RGB(72, 170, 255), RGB(28, 98, 226)},
+    {"radio", RGB(186, 104, 255), RGB(112, 64, 232)},
     {"settings", RGB(156, 162, 176), RGB(96, 102, 116)}, {"playlist", RGB(255, 122, 172), RGB(226, 60, 124)},
     {"genre", RGB(90, 206, 226), RGB(34, 140, 184)},     {"search", RGB(126, 136, 158), RGB(70, 80, 104)},
 };
@@ -544,8 +570,10 @@ static void draw_panel(Page *p, const char *kind, int px, int py, int pw, int ph
     }
     Player *pl = &app.status.player;
     if (!strcmp(kind, "now") && (pl->count || strcmp(pl->state, "stop"))) {
+        bool radio = !strcmp(pl->kind, "radio");
         float u = (el % 24000) / 24000.0f;
-        ken_burns(pl->art, "art-default", px, py, pw, ph, u < 0.5f ? u * 2 : 2 - u * 2, 2, alpha);
+        ken_burns(radio ? NULL : pl->art, radio ? "art-radio" : "art-default", px, py, pw, ph,
+                  u < 0.5f ? u * 2 : 2 - u * 2, 2, alpha);
         return;
     }
     if (!strcmp(kind, "art") || !strcmp(kind, "now"))

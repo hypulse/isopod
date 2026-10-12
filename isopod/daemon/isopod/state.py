@@ -13,9 +13,10 @@ class State:
         self.rev = 0
         self.adjusters = []
         self.data = {
-            "player": {"state": "stop", "title": "", "artist": "", "album": "",
+            "player": {"state": "stop", "kind": "song", "title": "", "artist": "", "album": "",
                        "elapsed": 0.0, "duration": 0.0, "pos": 0, "count": 0, "art": None,
-                       "shuffle": False, "repeat": False, "single": False, "favorite": False},
+                       "shuffle": False, "repeat": False, "single": False, "favorite": False,
+                       "buffering": False},
             "volume": {"level": 0, "muted": False, "output": "speaker", "name": ""},
             "battery": {"percent": 100, "charging": False},
             "bluetooth": {"enabled": False, "audio": None},

@@ -24,6 +24,7 @@ wait 1500
 key home
 wait 400
 key down
+key down
 key confirm
 shot 09-videos.png
 key home

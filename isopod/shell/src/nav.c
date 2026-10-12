@@ -920,6 +920,10 @@ void status_update(cJSON *state)
             SDL_strlcpy(p->state, v, sizeof(p->state));
             SDL_free(v);
         }
+        if ((v = json_str(pl, "kind"))) {
+            SDL_strlcpy(p->kind, v, sizeof(p->kind));
+            SDL_free(v);
+        }
         set_str(&p->title, pl, "title");
         set_str(&p->artist, pl, "artist");
         set_str(&p->album, pl, "album");
@@ -946,6 +950,7 @@ void status_update(cJSON *state)
         p->repeat = json_bool(pl, "repeat");
         p->single = json_bool(pl, "single");
         p->favorite = json_bool(pl, "favorite");
+        p->buffering = json_bool(pl, "buffering");
     }
     cJSON *vol = cJSON_GetObjectItemCaseSensitive(state, "volume");
     if (vol) {

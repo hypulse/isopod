@@ -81,7 +81,7 @@ key control
 wait 1000
 
 caption 설정 › 블루투스 · 헤드폰은 한 번 눌러 연결
-hold down 2
+hold down 3
 wait 600
 key confirm
 wait 900
@@ -127,7 +127,7 @@ wait 800
 caption 음악 검색 · 두벌식 한글 자판, 초성만으로도 찾아요
 daemon home
 wait 800
-hold up 2
+hold up 3
 key confirm
 wait 900
 hold down 7
@@ -151,7 +151,7 @@ shot d12-search.png
 caption 비디오 · videos 폴더의 동영상을 바로 재생해요 (음악은 멈춰요)
 daemon home
 wait 800
-key down
+hold down 2
 wait 500
 key confirm
 wait 2000
@@ -175,7 +175,7 @@ shot d15-closed.png
 
 caption 설정 › 최대 음량 · 헤드폰 볼륨의 상한
 hold up 12
-hold down 2
+hold down 3
 wait 500
 key confirm
 wait 900

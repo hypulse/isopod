@@ -72,6 +72,14 @@ def star(d, cx, cy, r):
     line(d, pts + pts[:1], soft * 2)
 
 
+def on_air(d, cx, cy, k, width):
+    """A station: a dot, and the waves it sends out to either side."""
+    ellipse(d, cx - 8 * k, cy - 8 * k, cx + 8 * k, cy + 8 * k)
+    for r in (22, 37, 52):
+        arc(d, cx, cy, r * k, 135, 225, width)
+        arc(d, cx, cy, r * k, -45, 45, width)
+
+
 def headphones(d, ox, oy, k, width):
     arc(d, ox + 20 * k, oy + 21 * k, 16 * k, 180, 360, width * k)
     rrect(d, ox + 2 * k, oy + 20 * k, ox + 10 * k, oy + 36 * k, 3 * k)
@@ -130,6 +138,8 @@ def glyphs(P):
         rrect(d, 18, 32, 110, 96, 14, fill=False, width=7)
         poly(d, [(54, 48), (54, 80), (84, 64)])
     glyph("video", video)
+
+    glyph("radio", lambda d: on_air(d, 64, 64, 1.0, 7))
 
     def settings(d):
         for i in range(8):
@@ -359,6 +369,12 @@ def art(out):
     tint = Image.new("RGBA", (size, size), (158, 158, 166, 255))
     base.paste(tint, (0, 0), glyph)
     base.convert("RGB").save(os.path.join(out, "art-default.png"))
+
+    base = gradient(size, (244, 244, 246), (206, 206, 212))
+    glyph, d = canvas(128, 128)
+    on_air(d, 64, 64, 0.82, 6)
+    base.paste(tint, (0, 0), glyph.resize((size, size), Image.LANCZOS))
+    base.convert("RGB").save(os.path.join(out, "art-radio.png"))
 
 
 PILL_BUG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "art", "pill-bug.png")

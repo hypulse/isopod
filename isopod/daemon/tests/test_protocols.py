@@ -22,6 +22,7 @@ from isopod.i18n import Translator  # noqa: E402
 from isopod.lyrics import decode, parse_lrc  # noqa: E402
 from isopod.main import parse_args  # noqa: E402
 from isopod.power import Power  # noqa: E402
+from isopod.radio import KEEP, LIFE, Radio, RadioError, station_from_api, unique  # noqa: E402
 from isopod.settings import Settings  # noqa: E402
 from isopod.state import State  # noqa: E402
 from isopod.system import System  # noqa: E402
@@ -341,6 +342,324 @@ class CoverArtTest(unittest.IsolatedAsyncioTestCase):
         covers = [await music.art_path(s["file"]) for s in music.songs]
         self.assertEqual(covers[0], covers[1], "one cover for an album")
         self.assertEqual(len(set(covers)), 4, "and never one cover for a whole folder")
+
+
+def on_air(uuid, name, **more):
+    """A station as Radio Browser gives it."""
+    return {"stationuuid": uuid, "name": name, "url_resolved": f"http://{uuid}.example/stream", "hls": 0,
+            "favicon": f"http://{uuid}.example/logo.png", "tags": "jazz,smooth jazz,lounge,late night",
+            "countrycode": "FR", "codec": "MP3", "bitrate": 128, **more}
+
+
+class Stations:
+    """Radio Browser as far as isoPod asks it: it notes what was asked and can be out of reach."""
+
+    def __init__(self, found):
+        self.found, self.asked, self.down = found, [], ()
+
+    async def get(self, path, **params):
+        self.asked.append(params.get("tag") or params.get("countrycode") or params.get("name") or path)
+        if self.asked[-1] in self.down:
+            raise RadioError("out of reach")
+        if path == "/json/countries":
+            return [{"iso_3166_1": "FR", "stationcount": 3690}, {"iso_3166_1": "JP", "stationcount": 400},
+                    {"iso_3166_1": "fr", "stationcount": 12}, {"iso_3166_1": "AD", "stationcount": 3}]
+        if path == "/json/stations/byuuid":
+            return [s for s in self.found if s["stationuuid"] in params["uuids"].split(",")]
+        return self.found
+
+
+def aged(*paths):
+    """Makes files a little more than a week old."""
+    for path in paths:
+        os.utime(path, (time.time() - LIFE - 60,) * 2)
+
+
+class RadioTest(unittest.IsolatedAsyncioTestCase):
+    """Stations come from Radio Browser: a list is kept from the first time it is opened, and
+    is fetched again only once it is a week old."""
+
+    def radio(self, found, d=None, **more):
+        self.dir = d or tempfile.mkdtemp()
+        self.stations = Stations(found)
+        return Radio(self.dir, self.dir, directory=self.stations, **more)
+
+    def test_a_station_as_isopod_keeps_it(self):
+        s = station_from_api(on_air("x", " Jazz ", codec="UNKNOWN"))
+        self.assertEqual((s["name"], s["codec"], s["genres"], s["country"]),
+                         ("Jazz", "", ["jazz", "chillout"], "FR"), "of its own words, the genres isoPod lists")
+        self.assertEqual(station_from_api(on_air("n", "N", tags="1930,aac,france,Hip-Hop"))["genres"], ["hiphop"])
+        hls = station_from_api(on_air("y", "Live", url_resolved="https://x/playlist.m3u8", hls=1))
+        self.assertEqual(hls["url"], "hls+https://x/playlist.m3u8", "the scheme MPD plays HLS under")
+        self.assertEqual(station_from_api(on_air("z", "Old", url_resolved="mms://x/stream"))["url"], "")
+        self.assertEqual(station_from_api(on_air("f", "File", url_resolved="file:///etc/passwd"))["url"], "")
+
+    def test_the_same_station_listed_twice_shows_once(self):
+        rows = [station_from_api(r) for r in (
+            on_air("1", "KBS Classic FM"), on_air("2", "kbs classic-fm"),
+            on_air("3", "KBS Classic FM", countrycode="US"),
+            on_air("4", "Another Name", url_resolved="http://1.example/stream"),
+            on_air("5", "Unplayable", url_resolved="rtsp://x"))]
+        self.assertEqual([s["uuid"] for s in unique(rows)], ["1", "3"],
+                         "one name in one country, one address: the first of each stays")
+
+    async def test_a_list_is_asked_for_once_and_then_kept(self):
+        radio = self.radio([on_air(str(i), f"Station {i}") for i in range(KEEP + 30)])
+        self.assertEqual(len(await radio.top()), KEEP)
+        await radio.top()
+        await radio.genre("jazz")
+        await radio.country("FR")
+        self.assertEqual(await radio.countries(), ["FR", "JP"], "countries with stations enough, by their code")
+        self.assertEqual(await radio.genre("made up"), [], "only the genres isoPod lists")
+        self.assertEqual(self.stations.asked, ["/json/stations/search", "jazz", "FR", "/json/countries"])
+
+        again = self.radio([], self.dir)
+        self.assertEqual(len(await again.top()), KEEP, "kept on the card: isoPod was off in between")
+        self.assertEqual(self.stations.asked, [])
+
+    async def test_a_search_is_asked_each_time_isopod_is_switched_on(self):
+        radio = self.radio([on_air("1", "Jazz FM")])
+        self.assertEqual([s["name"] for s in await radio.search("jazz")], ["Jazz FM"])
+        await radio.search("Jazz ")
+        self.assertEqual(self.stations.asked, ["jazz"])
+        await self.radio([], self.dir).search("jazz")
+        self.assertEqual(self.stations.asked, ["jazz"], "not kept on the card")
+
+    async def test_out_of_reach_keeps_nothing_and_asks_again(self):
+        radio = self.radio([on_air("1", "One")])
+        self.stations.down = ("jazz",)
+        with self.assertRaises(RadioError):
+            await radio.genre("jazz")
+        self.stations.down = ()
+        self.assertEqual(len(await radio.genre("jazz")), 1)
+
+    async def test_a_list_a_week_old_is_shown_as_it_was_and_fetched_again_behind_that(self):
+        told = []
+        radio = self.radio([on_air("1", "One"), on_air("2", "Two")])
+        radio.changed = lambda: told.append("changed")
+        await radio.top()
+        await radio.genre("jazz")
+        self.stations.found = [on_air("2", "Two, renamed"), on_air("9", "Nine")]
+        self.stations.asked.clear()
+        await radio.top()
+        await asyncio.sleep(0.1)
+        self.assertEqual(self.stations.asked, [], "not before it has aged")
+
+        aged(radio._file("top"), radio._file("genre-jazz"))
+        self.stations.down = ("jazz",)
+        self.assertEqual([s["name"] for s in await radio.top()], ["One", "Two"], "at once, as it was")
+        await radio.genre("jazz")
+        await asyncio.sleep(0.3)
+        self.assertEqual([s["name"] for s in await radio.top()], ["Two, renamed", "Nine"])
+        self.assertEqual(told, ["changed"], "the screen is told to draw the new list")
+        self.assertEqual([s["name"] for s in await radio.genre("jazz")], ["One", "Two"], "out of reach: it stays")
+
+        self.stations.down = ()
+        await radio.genre("jazz")
+        await asyncio.sleep(0.1)
+        self.assertEqual(self.stations.asked.count("jazz"), 1, "and it is not tried over and over")
+        radio._tried.clear()
+        await radio.genre("jazz")
+        await asyncio.sleep(0.3)
+        self.assertEqual([s["name"] for s in await radio.genre("jazz")], ["Two, renamed", "Nine"], "but later")
+
+    async def test_a_favourite_follows_its_station(self):
+        radio = self.radio([on_air("1", "One"), on_air("2", "Two")])
+        radio.toggle_favorite((await radio.top())[1])
+        self.stations.found = [on_air("2", "Two, renamed", url_resolved="http://moved.example/stream")]
+        radio.check_favorites()
+        await asyncio.sleep(0.3)
+        self.assertEqual([(s["name"], s["url"]) for s in radio.favorites],
+                         [("Two, renamed", "http://moved.example/stream")])
+        self.stations.asked.clear()
+        radio.check_favorites()
+        await asyncio.sleep(0.1)
+        self.assertEqual(self.stations.asked, [], "asked once a week, not each time they are opened")
+
+        aged(radio._asked)
+        radio._tried.clear()
+        self.stations.found = []
+        radio.check_favorites()
+        await asyncio.sleep(0.3)
+        self.assertEqual(self.stations.asked, ["/json/stations/byuuid"])
+        self.assertEqual(len(radio.favorites), 1, "a favourite the directory dropped stays a favourite")
+
+    async def test_a_logo_is_fetched_once_and_one_that_cannot_be_had_waits_a_week(self):
+        asked, arrived = [], []
+
+        def download(url):
+            asked.append(url)
+            return b"" if "dead" in url else b"picture"
+
+        def shrink(data, path):
+            with open(path, "wb") as f:
+                f.write(data)
+            return True
+
+        radio = self.radio([on_air("1", "One"), on_air("2", "Two", favicon="http://dead.example/logo.png"),
+                            on_air("3", "Three", favicon="")], download=download, shrink=shrink)
+        top = await radio.top()
+        self.assertEqual([radio.logo(s) for s in top], [None, None, None])
+        for _ in range(2):
+            radio.want_logos(top, lambda s: arrived.append(s["name"]))
+            radio.want_logos(top, lambda s: arrived.append(s["name"]))
+            await asyncio.sleep(0.2)
+        self.assertEqual(sorted(asked), ["http://1.example/logo.png", "http://dead.example/logo.png"])
+        self.assertEqual(arrived, ["One"])
+        self.assertTrue(radio.logo(top[0]).endswith(".png"))
+        self.assertIsNone(radio.logo(top[1]))
+
+        aged(radio._logo_base(top[1]) + ".no")
+        radio.want_logos(top, arrived.append)
+        await asyncio.sleep(0.2)
+        self.assertEqual(asked.count("http://dead.example/logo.png"), 2, "asked for once more a week later")
+
+        self.stations.found = [on_air("3", "Three", favicon="")]
+        aged(radio._file("top"))
+        await radio.top()
+        await asyncio.sleep(0.3)
+        self.assertEqual(os.listdir(radio.logo_dir), [], "the logos and marks of stations no list shows are gone")
+
+
+class RadioPagesTest(unittest.IsolatedAsyncioTestCase):
+    """The radio's screens, and Now Playing while a station is on."""
+
+    async def asyncSetUp(self):
+        class Mpd:
+            sent, broken, url = [], (), ""
+
+            async def call(self, name, *args):
+                if name == "status" and self.url in self.broken:
+                    return [("state", "stop"), ("error", "Failed to decode")]
+                return {"status": [("state", "play"), ("song", "0"), ("playlistlength", "1"), ("elapsed", "3.0"),
+                                   ("audio", "44100:16:2")],
+                        "currentsong": [("file", self.url), ("Title", "Aurora Lane - Neon Coast"),
+                                        ("Name", "the name the stream gives itself")]}.get(name, [])
+
+            async def call_list(self, commands):
+                if commands[0] == ("clear",):
+                    self.url = commands[1][1]
+                    self.sent.append(self.url)
+
+        class NoApp:
+            t = Translator("en")
+            changed, toasts = [], []
+
+            class power:
+                sleep_timer_left = staticmethod(lambda: 0)
+
+            def page_changed(self, *paths):
+                self.changed += paths
+
+            def toast(self, text, icon=None):
+                self.toasts.append(text)
+
+        d = tempfile.mkdtemp()
+        app = self.app = NoApp()
+        app.state = State(lambda snap: None)
+        self.mpd = Mpd()
+        app.music = Music(self.mpd, app.state, d)
+        self.stations = Stations([on_air("1", "Jazz FM"), on_air("2", "Radio Nova", countrycode="JP", bitrate=0),
+                                  on_air("3", "FIP", tags="")])
+        app.radio = Radio(d, d, directory=self.stations, download=lambda url: b"")
+        app.radio.changed = lambda: app.page_changed("/radio")
+        app.music.station_favorite = lambda station: app.radio.is_favorite(station.get("uuid"))
+        app.music.stream_failed = lambda: app.toast(app.t("radio_unreachable"))
+        self.pages = Pages(app)
+        app.music.step_station = self.pages.step_station
+        self.addCleanup(lambda: app.music._stream_watch and app.music._stream_watch.cancel())
+
+    async def rows(self, path, field="title"):
+        return [i.get(field) for i in (await self.pages.build(path))["items"] if not i.get("header")]
+
+    async def test_the_menu_and_what_a_row_says_of_a_station(self):
+        self.assertEqual(await self.rows("/radio"), ["Favorites", "Popular", "Genres", "Countries", "Search"])
+        self.assertEqual((await self.rows("/radio/genres"))[:3], ["Pop", "Rock", "Jazz"])
+        self.assertEqual((await self.pages.activate("/radio/genres", "g:jazz"))["push"], "/radio/genre/jazz")
+        self.assertEqual(await self.rows("/radio/countries"), ["France", "Japan"])
+        self.assertEqual((await self.pages.activate("/radio/countries", "c:JP"))["push"], "/radio/country/JP")
+        self.assertEqual(await self.rows("/radio/top", "subtitle"), ["France · Jazz", "Japan · Jazz", "France"])
+        self.assertEqual(await self.rows("/radio/genre/jazz", "subtitle"), ["France", "Japan", "France"],
+                         "the list says what they play")
+        self.assertEqual(await self.rows("/radio/country/FR", "subtitle"), ["Jazz · Chillout"] * 2 + [None],
+                         "the list says where they are")
+        self.assertEqual((await self.pages.build("/radio/country/FR"))["title"], "France")
+        search = (await self.pages.resolve((await self.pages.activate("/radio", "search"))["input"]["token"],
+                                           " nova "))["push"]
+        self.assertEqual((await self.pages.build(search))["title"], "Search for “nova”")
+
+    async def test_a_list_that_is_not_kept_yet_says_so_when_out_of_reach(self):
+        self.stations.down = ("/json/stations/search", "/json/countries")
+        for path in ("/radio/top", "/radio/countries"):
+            page = await self.pages.build(path)
+            self.assertEqual((page["items"], page["empty"]["title"]), ([], "Couldn’t Connect"))
+        self.stations.down = ()
+        self.assertEqual(len(await self.rows("/radio/top")), 3)
+        self.stations.down = ("/json/stations/search",)
+        self.assertEqual(len(await self.rows("/radio/top")), 3, "one that is kept opens all the same")
+
+    async def test_a_station_is_tuned_in_marked_and_followed_by_its_neighbours(self):
+        pages, state = self.pages, self.app.state
+        self.assertEqual(await pages.activate("/radio/top", "st:2"), {"nowplaying": True})
+        self.assertEqual(self.mpd.sent, ["http://2.example/stream"])
+        player = state.get("player")
+        self.assertEqual((player["kind"], player["title"], player["buffering"], player["favorite"]),
+                         ("radio", "Radio Nova", True, False), "shown at once, before it is heard")
+        self.assertNotIn("/json/url/2", self.stations.asked, "and nobody is told what was played")
+        self.assertEqual(await self.rows("/radio/top", "accessory"), ["none", "playing", "none"])
+
+        await self.app.music.refresh()
+        player = state.get("player")
+        self.assertEqual((player["title"], player["artist"], player["buffering"], player["duration"]),
+                         ("Radio Nova", "Aurora Lane - Neon Coast", False, 0.0), "its name, and what it says is on")
+        page = await pages.build("/nowplaying")
+        self.assertEqual((page["note"], page["items"]), ("Japan · MP3", []))
+
+        sheet = await pages.now_playing_options()
+        self.assertEqual([o["key"] for o in sheet["sheet"]["items"]], ["favorite", "timer"],
+                         "shuffle, repeat and a queue are a song's")
+        await pages.resolve(sheet["sheet"]["token"], "favorite")
+        self.assertTrue(state.get("player")["favorite"])
+        self.assertEqual(await self.rows("/radio/favorites"), ["Radio Nova"])
+        self.assertEqual(await self.rows("/radio/top", "star"), [None, True, None])
+        self.assertIn("/radio/*", self.app.changed)
+
+        sheet = await pages.alt("/radio/favorites", "st:2")
+        self.assertEqual(sheet["sheet"]["items"], [{"key": "favorite", "title": "Favorite", "value": "On"}])
+        await pages.resolve(sheet["sheet"]["token"], "favorite")
+        self.assertEqual(await self.rows("/radio/favorites"), [])
+        self.assertFalse(state.get("player")["favorite"])
+
+        await self.app.music.next()
+        self.assertEqual(state.get("player")["title"], "FIP", "the next station of the list it was picked from")
+        await self.app.music.next()
+        self.assertEqual(state.get("player")["title"], "Jazz FM", "and round to the first")
+        await self.app.music.previous()
+        self.assertEqual(state.get("player")["title"], "FIP")
+        await self.app.music.seek(10)
+        self.assertEqual(len(self.mpd.sent), 4, "a station cannot be wound")
+
+    async def test_an_hls_station_is_tried_under_both_of_its_addresses(self):
+        plain = "https://nhk.example/live.m3u8"
+        self.stations.found = [on_air("h", "NHK", url_resolved=plain, hls=1)]
+        self.mpd.broken = ("hls+" + plain,)
+        await self.pages.activate("/radio/top", "st:h")
+        await self.app.music._stream_watch
+        self.assertEqual(self.mpd.sent, [plain], "as a plain address first")
+
+        self.mpd.broken = (plain,)
+        await self.pages.activate("/radio/top", "st:h")
+        await self.app.music._stream_watch
+        self.assertEqual(self.mpd.sent[1:], [plain, "hls+" + plain], "then the way FFmpeg alone reads it")
+        player = self.app.state.get("player")
+        self.assertEqual((player["title"], player["state"], player["buffering"]), ("NHK", "play", False))
+        self.assertEqual(await self.rows("/radio/top", "accessory"), ["playing"])
+        self.assertEqual(self.app.toasts, [])
+
+        self.mpd.broken = (plain, "hls+" + plain)
+        await self.pages.activate("/radio/top", "st:h")
+        await self.app.music._stream_watch
+        self.assertEqual(self.app.toasts, ["Couldn’t Connect"], "under neither: it says so, once")
 
 
 class FolderListingTest(unittest.TestCase):

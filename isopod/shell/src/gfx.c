@@ -651,6 +651,43 @@ static SDL_Surface *square_thumb(SDL_Surface *src, int size, int radius)
     return out;
 }
 
+/* A station's logo keeps its shape and all of itself: it is fitted into the square, and a
+ * small one is drawn at twice its size at most, in the middle of it. */
+static SDL_Surface *fit_thumb(SDL_Surface *src, int size)
+{
+    SDL_Surface *s = SDL_ConvertSurfaceFormat(src, SDL_PIXELFORMAT_ARGB8888, 0);
+    SDL_Surface *out = s ? SDL_CreateRGBSurfaceWithFormat(0, size, size, 32, SDL_PIXELFORMAT_ARGB8888) : NULL;
+    if (!out || s->w < 1 || s->h < 1) {
+        SDL_FreeSurface(s);
+        SDL_FreeSurface(out);
+        return NULL;
+    }
+    SDL_FillRect(out, NULL, 0);
+    float scale = fminf(fminf((float)size / s->w, (float)size / s->h), 2);
+    int w = SDL_clamp((int)(s->w * scale + 0.5f), 1, size), h = SDL_clamp((int)(s->h * scale + 0.5f), 1, size);
+    for (int y = 0; y < h; y++) {
+        int y0 = y * s->h / h, y1 = (y + 1) * s->h / h;
+        Uint32 *dst = (Uint32 *)((Uint8 *)out->pixels + (y + (size - h) / 2) * out->pitch) + (size - w) / 2;
+        for (int x = 0; x < w; x++) {
+            int x0 = x * s->w / w, x1 = (x + 1) * s->w / w;
+            Uint32 a = 0, r = 0, g = 0, b = 0, n = 0;
+            for (int yy = y0; yy < (y1 > y0 ? y1 : y0 + 1); yy++) {
+                const Uint32 *row = (const Uint32 *)((const Uint8 *)s->pixels + yy * s->pitch);
+                for (int xx = x0; xx < (x1 > x0 ? x1 : x0 + 1); xx++, n++) {
+                    Uint32 p = row[xx], pa = p >> 24;
+                    a += pa;
+                    r += ((p >> 16) & 255) * pa;
+                    g += ((p >> 8) & 255) * pa;
+                    b += (p & 255) * pa;
+                }
+            }
+            dst[x] = a ? (a / n) << 24 | (r / a) << 16 | (g / a) << 8 | (b / a) : 0;
+        }
+    }
+    SDL_FreeSurface(s);
+    return out;
+}
+
 SDL_Texture *image(const char *path, int size)
 {
     return image_r(path, size, 0);
@@ -674,7 +711,7 @@ SDL_Texture *image_r(const char *path, int size, int radius)
     SDL_Surface *raw = IMG_Load(path);
     SDL_Texture *tex = NULL;
     if (raw) {
-        SDL_Surface *thumb = square_thumb(raw, size, radius);
+        SDL_Surface *thumb = radius == IMAGE_FIT ? fit_thumb(raw, size) : square_thumb(raw, size, radius);
         SDL_FreeSurface(raw);
         if (thumb) {
             tex = SDL_CreateTextureFromSurface(app.renderer, thumb);

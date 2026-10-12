@@ -13,6 +13,7 @@ from .util import matches, sort_key, spawn
 log = logging.getLogger("isopod.music")
 
 LYRIC_EXTS = (".lrc", ".txt")
+STREAM_PREFIXES = ("http://", "https://", "hls+http://", "hls+https://")
 FAVORITES = "Favorites"
 
 
@@ -32,6 +33,12 @@ def _float(value, default=0.0):
 
 def _fold(name):
     return unicodedata.normalize("NFC", name).casefold()
+
+
+def stream_urls(url):
+    """The addresses to try a station under. MPD on isoPod plays some HLS streams only as a
+    plain address and others only under FFmpeg's hls+ scheme; no telling which from the address."""
+    return [url[4:], url] if url.startswith("hls+") else [url]
 
 
 class Song(dict):
@@ -63,6 +70,10 @@ class Music:
         self.art_dir = os.path.join(cache_dir, "art")
         self.song_changed = lambda: None
         self.favorites_changed = lambda: None
+        self.stream_failed = lambda: None
+        self.station_favorite = lambda station: False
+        self.step_station = None
+        self.station = None
         self.songs = []
         self.favorites = []
         self.updating = False
@@ -71,6 +82,8 @@ class Music:
         self._no_art = set()
         self._listeners = []
         self._rescan = None
+        self._stream_watch = None
+        self._stream_url = None
         state.adjusters.append(self._live_elapsed)
 
     def on_library_change(self, fn):
@@ -114,7 +127,8 @@ class Music:
         if favorites == self.favorites:
             return
         self.favorites = favorites
-        self.state.update("player", favorite=self.state.get("player").get("file") in self.favorites)
+        if not self._on_radio():
+            self.state.update("player", favorite=self.state.get("player").get("file") in self.favorites)
         self.favorites_changed()
 
     async def set_favorite(self, file, on):
@@ -156,17 +170,26 @@ class Music:
         uri = song.get("file", "")
         if uri != self.state.get("player").get("file"):
             self.song_changed()
-        s = Song.from_mpd(song) if song else Song(title="", artist="", album="")
-        art = self._art_for(uri) if uri else None
-        if uri and art is None and uri not in self._no_art:
-            spawn(self._fetch_art(uri))
+        radio = uri.startswith(STREAM_PREFIXES)
+        if radio:
+            # A station is shown by its own name; what it says is on is the line under it.
+            station = self.station if self.station and uri == self._stream_url else {}
+            about = dict(title=station.get("name") or song.get("name") or uri, artist=song.get("title", ""),
+                         album="", art=station.get("art"), favorite=self.station_favorite(station),
+                         duration=0.0, buffering=playing == "play" and not status.get("audio"))
+        else:
+            s = Song.from_mpd(song) if song else Song(title="", artist="", album="")
+            art = self._art_for(uri) if uri else None
+            if uri and art is None and uri not in self._no_art:
+                spawn(self._fetch_art(uri))
+            about = dict(title=s["title"], artist=s["artist"], album=s["album"], art=art,
+                         favorite=uri in self.favorites, buffering=False,
+                         duration=_float(status.get("duration") or song.get("duration")))
         self.state.update(
-            "player", state=playing if song else "stop", file=uri, elapsed=elapsed,
-            duration=_float(status.get("duration") or song.get("duration")),
-            pos=_int(status.get("song"), -1) + 1, count=_int(status.get("playlistlength")),
+            "player", state=playing if song else "stop", kind="radio" if radio else "song", file=uri,
+            elapsed=elapsed, pos=_int(status.get("song"), -1) + 1, count=_int(status.get("playlistlength")),
             shuffle=status.get("random") == "1", repeat=status.get("repeat") == "1",
-            single=status.get("single") == "1", title=s["title"], artist=s["artist"], album=s["album"],
-            art=art, favorite=uri in self.favorites)
+            single=status.get("single") == "1", **about)
         if abs(shown - elapsed) > 1:
             self.state.resend()
 
@@ -245,7 +268,7 @@ class Music:
         """(lines, times or None) for the song playing: an .lrc or .txt beside the file first,
         then lyrics tags MPD can read. None when there are none."""
         uri = self.state.get("player").get("file") or ""
-        if not uri:
+        if not uri or uri.startswith(STREAM_PREFIXES):
             return None
         for path in self._lyric_files(uri):
             try:
@@ -328,6 +351,7 @@ class Music:
     async def play_songs(self, songs, index=0):
         if not songs:
             return
+        self.station = None
         cmds = [("clear",), ("random", "0")] + [("add", s["file"]) for s in songs]
         cmds.append(("play", str(max(0, min(index, len(songs) - 1)))))
         await self.mpd.call_list(cmds)
@@ -336,6 +360,61 @@ class Music:
         songs = list(self.songs)
         random.shuffle(songs)
         await self.play_songs(songs, 0)
+
+    async def play_stream(self, station):
+        """Show the station at once; MPD stays silent while the stream connects."""
+        self.station = station
+        urls = stream_urls(station["url"])
+        if urls[0] != self.state.get("player").get("file"):
+            self.song_changed()
+        self.state.update("player", state="play", kind="radio", file=urls[0], buffering=True,
+                          title=station.get("name") or urls[0], artist="", album="", art=station.get("art"),
+                          favorite=self.station_favorite(station), elapsed=0.0, duration=0.0, pos=1, count=1)
+        if self._stream_watch:
+            self._stream_watch.cancel()
+        await self._start_stream(urls[0])
+        self._stream_watch = spawn(self._watch_stream(station, urls))
+
+    async def _start_stream(self, url):
+        self._stream_url = url
+        await self.mpd.call_list([("clear",), ("add", url), ("play", "0")])
+
+    async def _watch_stream(self, station, urls, patience=20):
+        """See that the station sounds, under the next of its addresses if not under this one."""
+        for i, url in enumerate(urls):
+            if i:
+                await self._start_stream(url)
+            deadline = time.monotonic() + patience / len(urls)
+            while time.monotonic() < deadline:
+                await asyncio.sleep(0.5)
+                if self.station is not station:
+                    return
+                try:
+                    status = await self._status()
+                except MPDError:
+                    return
+                if status.get("error"):
+                    break
+                if status.get("audio") or status.get("state") != "play":
+                    await self.refresh()
+                    return
+            try:
+                await self.mpd.call_list([("clearerror",), ("stop",)])
+            except MPDError:
+                pass
+        log.warning("station did not start: %s", urls[0])
+        self.stream_failed()
+        await self.refresh()
+
+    def station_logo(self, station, path):
+        """The logo of the station that is on came in after it was tuned in."""
+        if self.station and self.station.get("favicon") == station.get("favicon"):
+            self.station["art"] = path
+            if self.state.get("player")["kind"] == "radio":
+                self.state.update("player", art=path)
+
+    def _on_radio(self):
+        return self.state.get("player")["kind"] == "radio"
 
     async def enqueue(self, song, next_up=False):
         if next_up:
@@ -365,15 +444,26 @@ class Music:
             await self.mpd.call("pause", "1")
 
     async def next(self):
+        if self._on_radio():
+            return await self._step(1)
         await self.mpd.call("next")
 
+    async def _step(self, delta):
+        """On the radio the next and the previous are stations, not songs."""
+        if self.step_station:
+            await self.step_station(delta)
+
     async def previous(self):
+        if self._on_radio():
+            return await self._step(-1)
         if self._position() > 3 or self.state.get("player")["pos"] <= 1:
             await self.mpd.call("seekcur", "0")
         else:
             await self.mpd.call("previous")
 
     async def seek(self, delta):
+        if self._on_radio():
+            return
         await self.mpd.call("seekcur", f"{delta:+d}")
 
     async def set_shuffle(self, on):

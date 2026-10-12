@@ -10,7 +10,7 @@ HDR = src/shell.h src/theme.h
 PREFIX ?= /usr
 DESTDIR ?=
 
-all: isopod-shell isopod-splash
+all: isopod-shell isopod-splash isopod-thumb
 
 isopod-shell: $(SRC) $(HDR)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(SRC) $(LDLIBS)
@@ -18,10 +18,13 @@ isopod-shell: $(SRC) $(HDR)
 isopod-splash: src/splash.c
 	$(CC) -O2 -std=gnu11 -Wall -Wextra $(LDFLAGS) -o $@ $<
 
+isopod-thumb: src/thumb.c
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LDLIBS)
+
 install: isopod-shell
 	install -Dm755 isopod-shell $(DESTDIR)$(PREFIX)/bin/isopod-shell
 
 clean:
-	rm -f isopod-shell isopod-splash
+	rm -f isopod-shell isopod-splash isopod-thumb
 
 .PHONY: all install clean

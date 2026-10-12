@@ -11,6 +11,8 @@
 enum { ACC_NONE, ACC_CHEVRON, ACC_CHECK, ACC_SWITCH, ACC_SPINNER, ACC_PLAYING };
 enum { STYLE_LIST, STYLE_NOWPLAYING, STYLE_SLIDER, STYLE_ABOUT, STYLE_COVERFLOW, STYLE_LYRICS };
 enum { FONT_REGULAR, FONT_MEDIUM, FONT_SEMIBOLD, FONT_BOLD, FONT_WEIGHTS };
+/* In place of a corner radius: the whole picture inside the square, not a square cut from it. */
+#define IMAGE_FIT (-1)
 
 typedef struct {
     char *key, *title, *subtitle, *value, *art, *icon, *preview, *link;
@@ -76,12 +78,12 @@ typedef struct {
 } Keyboard;
 
 typedef struct {
-    char state[8];
+    char state[8], kind[8];
     char *title, *artist, *album, *art, *file;
     double elapsed, duration;
     Uint32 elapsed_at;
     int pos, count;
-    bool shuffle, repeat, single, favorite;
+    bool shuffle, repeat, single, favorite, buffering;
 } Player;
 
 typedef struct {

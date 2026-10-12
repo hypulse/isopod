@@ -24,7 +24,7 @@ wait 1200
 shot c05-control.png
 key control
 wait 600
-hold down 2
+hold down 3
 key confirm
 wait 1200
 shot c06-settings.png

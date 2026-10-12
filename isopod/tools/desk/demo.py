@@ -80,16 +80,16 @@ def storyboard():
     key("now", 12)
 
     caption("동영상 · MP4와 SMI 한국어 자막, 음악은 알아서 멈춰요")
-    video(3, 8, down=1)
+    video(3, 8, down=2)
 
     caption("Home · 동영상은 그 자리에서 멈춰 기다려요")
     key("home", 1.2)
-    keys("up", 2, 3)  # past Music, around to the open app at the end of the menu
+    keys("up", 3, 3)  # past Radio and Music, around to the open app at the end of the menu
     caption("열린 앱을 고르면 멈춘 자리에서 그대로 이어져요")
     key("confirm", 7)
 
     caption("MKV 속 ASS 자막")
-    video(1, 6.5, down=2)  # from the open app, around to Music and on to Videos
+    video(1, 6.5, down=3)  # from the open app, around to Music and on to Videos
     caption("AVI와 SRT 자막")
     video(2, 7)
     caption("WebM")

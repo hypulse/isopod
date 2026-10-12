@@ -1,5 +1,6 @@
 STRINGS = {
     "music": ("음악", "Music"),
+    "radio": ("라디오", "Radio"),
     "videos": ("비디오", "Videos"),
     "settings": ("설정", "Settings"),
     "shuffle_songs": ("노래 셔플", "Shuffle Songs"),
@@ -43,6 +44,29 @@ STRINGS = {
     "sleep_timer_set": ("{n}분 뒤에 음악을 멈춰요", "Music stops in {n} min"),
     "one_hour": ("1시간", "1 hour"),
     "battery_low": ("배터리 {n}% 남음", "{n}% Battery Remaining"),
+
+    "popular": ("인기", "Popular"),
+    "countries": ("나라", "Countries"),
+    "search_radio_prompt": ("방송 이름", "Station name"),
+    "no_station_favorites_text": ("방송에서 X를 눌러 추가해 주세요.", "Press X on a station to add it."),
+    "radio_unreachable": ("연결할 수 없어요", "Couldn’t Connect"),
+    "live": ("라이브", "Live"),
+    "genre_pop": ("팝", "Pop"),
+    "genre_rock": ("록", "Rock"),
+    "genre_jazz": ("재즈", "Jazz"),
+    "genre_classical": ("클래식", "Classical"),
+    "genre_electronic": ("일렉트로닉", "Electronic"),
+    "genre_hiphop": ("힙합", "Hip-Hop"),
+    "genre_soul": ("소울", "Soul"),
+    "genre_blues": ("블루스", "Blues"),
+    "genre_country": ("컨트리", "Country"),
+    "genre_metal": ("메탈", "Metal"),
+    "genre_chillout": ("칠아웃", "Chillout"),
+    "genre_oldies": ("올디스", "Oldies"),
+    "genre_80s": ("80년대", "80s"),
+    "genre_90s": ("90년대", "90s"),
+    "genre_news": ("뉴스", "News"),
+    "genre_talk": ("토크", "Talk"),
 
     "no_videos_title": ("비디오가 없어요", "No Videos"),
     "no_videos_text": ("videos 폴더에 동영상을 넣어 주세요.", "Copy movies into the videos folder."),
@@ -130,5 +154,5 @@ class Translator:
     def shell_strings(self):
         keys = ("now_playing", "nothing_playing", "done", "space",
                 "volume", "brightness", "shuffle", "repeat", "repeat_one", "on", "off",
-                "opening", "searching", "connecting", "empty_list", "clock_am", "clock_pm")
+                "opening", "searching", "connecting", "live", "empty_list", "clock_am", "clock_pm")
         return {k: self(k) for k in keys}

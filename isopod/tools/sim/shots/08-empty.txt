@@ -20,6 +20,7 @@ key home
 key down
 key down
 key down
+key down
 key confirm
 wait 600
 shot 08-shuffle-with-no-songs.png

@@ -17,6 +17,11 @@ replaces the front end with a small shell built around your music.
 - **Favorites**: X on a song, in a list or in Now Playing, makes it a favorite or no longer
   one. Favorites is the first of the playlists, and a star marks a favorite wherever it is
   listed.
+- **Radio**: stations from [Radio Browser](https://www.radio-browser.info), under Favorites,
+  Popular, Genres, Countries and Search. A list is fetched the first time it is opened and
+  kept on the card with its logos. Opened a week or more later it shows at once as it was,
+  and is fetched again behind that when the network is there. X on a station makes it a
+  favorite.
 - **Lyrics**, all of them, are a press of Y away: timed lyrics follow the line being sung,
   plain ones scroll. They come from an `.lrc` or `.txt` file beside the song and named
   like it (`Song.mp3`, `Song.lrc`), or from the song's own tags.
@@ -82,7 +87,8 @@ Every screen is a list, and every list works the same way.
 
 In Now Playing, ← and → are the previous and the next song, and held they wind through the
 song, as on an iPod; ← starts a song again once it is three seconds in. ↑ and ↓ change the
-volume, and Y shows the lyrics.
+volume, and Y shows the lyrics. While a station is on, ← and → are the stations before and
+after it in the list it was picked from.
 
 The on-screen keyboard goes around its edges the way lists do.
 
@@ -98,7 +104,7 @@ otherwise, and a paused video lets the screen go dark like any list.
 | --- | --- | --- |
 | isopodd | `isopod/daemon` | Python asyncio daemon. Owns the buttons, the lid and the power key. Runs audio routing, Bluetooth, Wi-Fi, the MPD client and apps, and describes every screen |
 | isopod-shell | `isopod/shell` | C and SDL2 renderer at 640×480. Draws what isopodd describes and nothing else |
-| MPD | `projects/ROCKNIX/packages/isopod/mpd` | Plays music through PipeWire |
+| MPD | `projects/ROCKNIX/packages/isopod/mpd` | Plays music and radio through PipeWire |
 | sway | ROCKNIX | Shows the shell on workspace 1 and each app on a workspace of its own |
 | systemd | ROCKNIX | Runs each app as a transient unit, frozen while it waits in the background |
 

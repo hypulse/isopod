@@ -46,7 +46,7 @@ audio_output {
 CONF
 mpd "$W/mpd.conf" 2>/dev/null
 
-python3 "$ROOT/daemon/isopodd" --sim --apps direct --socket "$W/isopodd.sock" --config "$W/config" \
+PATH="$ROOT/shell:$PATH" python3 "$ROOT/daemon/isopodd" --sim --apps direct --socket "$W/isopodd.sock" --config "$W/config" \
     --cache "$W/cache" --music "$W/music" --videos "$W/videos" --data "$W/share" --mpd "$W/mpd.sock" \
     >"$W/isopodd.log" 2>&1 &
 make -s -C "$ROOT/shell"

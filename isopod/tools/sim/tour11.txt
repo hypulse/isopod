@@ -18,6 +18,7 @@ shot t05-wifi-not-joined.png
 sim {"wifi": "Home"}
 key down
 key down
+key down
 key confirm
 wait 500
 key confirm
@@ -44,6 +45,7 @@ wait 1600
 shot t08-headphones.png
 key home
 wait 500
+key up
 key up
 key up
 key confirm

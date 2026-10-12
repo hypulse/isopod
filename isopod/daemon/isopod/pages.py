@@ -4,6 +4,8 @@ import os
 import secrets
 import zlib
 
+from .countries import NAMES as COUNTRIES, country_name
+from .radio import GENRES, RadioError
 from .system import human_size
 from .util import enc, sort_key, spawn, split_path
 
@@ -66,6 +68,7 @@ class Pages:
         self.app = app
         self._tokens = {}
         self._art_jobs = set()
+        self._lineup = (None, [], 0)
 
     @property
     def t(self):
@@ -140,6 +143,7 @@ class Pages:
         t = self.t
         items = [
             item("music", t("music"), preview="art"),
+            item("radio", t("radio"), preview="radio"),
             item("videos", t("videos"), preview="video"),
             item("settings", t("settings"), preview="settings"),
             item("shuffle", t("shuffle_songs"), "none", preview="art"),
@@ -188,9 +192,11 @@ class Pages:
         return [item(f"s{i}", s["title"], "playing" if s["file"] == playing_file else "none",
                      star=s["file"] in favorites or None) for i, s in enumerate(songs)]
 
-    def _favorite_option(self, file):
-        on = file in self.app.music.favorites
+    def _favorite_row(self, on):
         return {"key": "favorite", "title": self.t("favorite"), "value": self.t("on") if on else None}
+
+    def _favorite_option(self, file):
+        return self._favorite_row(file in self.app.music.favorites)
 
     async def _toggle_favorite(self, file):
         await self.app.music.set_favorite(file, file not in self.app.music.favorites)
@@ -400,9 +406,16 @@ class Pages:
         # Beside the cover: a line about the song, and its words where they follow the song.
         found = await self.app.music.lyrics()
         lines, times = found if found and found[1] else ([], None)
+        radio = self.app.state.get("player")["kind"] == "radio"
         return {"path": path, "title": self.t("now_playing"), "style": "nowplaying", "live": True,
                 "items": [item(f"l{i}", line, "none") for i, line in enumerate(lines)], "times": times,
-                "note": self.app.music.details()}
+                "note": self._on_air() if radio else self.app.music.details()}
+
+    def _on_air(self):
+        """A line about the station that is on: where it is from and what it sends."""
+        s = self.app.music.station or {}
+        sends = " ".join(filter(None, (s.get("codec"), f"{s['bitrate']}k" if s.get("bitrate") else None)))
+        return " · ".join(filter(None, (self._country(s.get("country")), sends)))
 
     async def now_playing_options(self):
         t = self.t
@@ -411,19 +424,25 @@ class Pages:
         timer = {"key": "timer", "title": t("sleep_timer"), "value": t("minutes", n=left) if left else None}
         repeat = (t("repeat_one") if player["single"] else t("on")) if player["repeat"] else None
         file = player.get("file")
-        options = [self._favorite_option(file)] if file else []
-        options += [
-            {"key": "shuffle", "title": t("shuffle"), "value": t("on") if player["shuffle"] else None},
-            {"key": "repeat", "title": t("repeat"), "value": repeat},
-            {"key": "queue", "title": t("up_next")},
-        ]
-        if player["album"]:
-            options.append({"key": "album", "title": t("go_to_album")})
+        station = self.app.music.station if player["kind"] == "radio" else None
+        if player["kind"] == "radio":
+            options = [self._favorite_row(self.app.radio.is_favorite(station["uuid"]))] if station else []
+        else:
+            options = [self._favorite_option(file)] if file else []
+            options += [
+                {"key": "shuffle", "title": t("shuffle"), "value": t("on") if player["shuffle"] else None},
+                {"key": "repeat", "title": t("repeat"), "value": repeat},
+                {"key": "queue", "title": t("up_next")},
+            ]
+            if player["album"]:
+                options.append({"key": "album", "title": t("go_to_album")})
         options.append(timer)
 
         async def choose(choice):
             m = self.app.music
-            if choice == "favorite":
+            if choice == "favorite" and station:
+                self._toggle_station(station)
+            elif choice == "favorite":
                 await self._toggle_favorite(file)
             elif choice == "shuffle":
                 await m.set_shuffle(not player["shuffle"])
@@ -453,6 +472,135 @@ class Pages:
             return {"none": True}
         return {"sheet": {"title": t("sleep_timer"), "token": self._token(choose),
                           "items": [{"key": str(m), "title": label} for m, label in choices]}}
+
+    # radio -------------------------------------------------------------------
+
+    def _country(self, code):
+        return country_name(code, self.t.lang) if code else None
+
+    def _station_items(self, path, stations, country=True, genres=1):
+        """A station's row says where it is from and what it plays, less what its list says."""
+        radio = self.app.radio
+        on = self.app.music.station if self.app.state.get("player")["kind"] == "radio" else None
+        items = []
+        for s in stations:
+            about = [self._country(s["country"])] if country and s["country"] else []
+            about += [self.t("genre_" + g) for g in s.get("genres", [])[:genres] if g in GENRES]
+            mark = "playing" if on and s["uuid"] == on["uuid"] else "none"
+            items.append(item("st:" + s["uuid"], s["name"], mark, subtitle=" · ".join(about) or None,
+                              art=radio.logo(s), star=radio.is_favorite(s["uuid"]) or None))
+        radio.want_logos(stations, lambda station: self._logo_arrived(station, path))
+        return items
+
+    def _logo_arrived(self, station, path=None):
+        if path:
+            self.app.page_changed(path)
+        self.app.music.station_logo(station, self.app.radio.logo(station))
+
+    async def _stations_for(self, rest):
+        r = self.app.radio
+        kind = rest[0] if rest else ""
+        if kind == "favorites":
+            r.check_favorites()
+            return r.favorites
+        if kind == "top":
+            return await r.top()
+        if kind == "genre" and len(rest) >= 2:
+            return await r.genre(rest[1])
+        if kind == "country" and len(rest) >= 2:
+            return await r.country(rest[1])
+        if kind == "search" and len(rest) >= 2:
+            return await r.search(rest[1])
+        return None
+
+    async def _page_radio(self, path, rest):
+        t = self.t
+        r = self.app.radio
+        if not rest:
+            items = [item("favorites", t("favorites")), item("top", t("popular")), item("genres", t("genres")),
+                     item("countries", t("countries")), item("search", t("search"))]
+            return page(path, t("radio"), items)
+        kind = rest[0]
+        name = rest[1] if len(rest) > 1 else ""
+        if kind == "genres":
+            return page(path, t("genres"), [item("g:" + g, t("genre_" + g)) for g in GENRES])
+        title = {"favorites": t("favorites"), "top": t("popular"), "countries": t("countries"),
+                 "genre": t("genre_" + name) if name in GENRES else name, "country": self._country(name),
+                 "search": t("search_for", q=name)}.get(kind) or ""
+        try:
+            if kind == "countries":
+                names = sorted(((self._country(c), c) for c in await r.countries() if c in COUNTRIES),
+                               key=lambda pair: sort_key(pair[0]))
+                return page(path, title, [item("c:" + c, n) for n, c in names], index=True)
+            stations = await self._stations_for(rest)
+        except RadioError:
+            return page(path, title, [], empty=empty("wifi", t("radio_unreachable")))
+        if stations is None:
+            return page(path, "", [])
+        nothing = {"favorites": empty("star", t("no_favorites_title"), t("no_station_favorites_text")),
+                   "search": empty("search", t("no_results"))}.get(kind)
+        about = {"genre": dict(genres=0), "country": dict(country=False, genres=2)}.get(kind, {})
+        return page(path, title, self._station_items(path, stations, **about), rows="art", empty=nothing)
+
+    async def _do_radio(self, path, rest, key):
+        if not rest:
+            if key == "search":
+                return {"input": {"title": self.t("search"), "placeholder": self.t("search_radio_prompt"),
+                                  "token": self._token(self._radio_search)}}
+            return {"push": "/radio/" + key}
+        if rest[0] == "genres":
+            return {"push": "/radio/genre/" + enc(key[2:])}
+        if rest[0] == "countries":
+            return {"push": "/radio/country/" + enc(key[2:])}
+        stations, index = await self._station(rest, key)
+        if index is not None:
+            await self._tune(path, stations, index)
+            return {"nowplaying": True}
+
+    async def _station(self, rest, key):
+        """The list a station's row is in and where in it, (list, None) if it is not there."""
+        try:
+            stations = await self._stations_for(rest) or []
+        except RadioError:
+            stations = []
+        return stations, next((i for i, s in enumerate(stations) if "st:" + s["uuid"] == key), None)
+
+    async def _tune(self, path, stations, index):
+        radio = self.app.radio
+        station = dict(stations[index], art=radio.logo(stations[index]))
+        self._lineup = (path, stations, index)
+        await self.app.music.play_stream(station)
+        radio.want_logos([station], self._logo_arrived)
+        self.app.page_changed(path)
+
+    async def step_station(self, delta):
+        """The station after or before the one that is on, in the list it was picked from."""
+        path, stations, index = self._lineup
+        if len(stations) > 1:
+            await self._tune(path, stations, (index + delta) % len(stations))
+
+    def _radio_search(self, text):
+        text = (text or "").strip()
+        return {"push": "/radio/search/" + enc(text)} if text else {"none": True}
+
+    def _toggle_station(self, station):
+        radio = self.app.radio
+        radio.toggle_favorite(station)
+        if (self.app.music.station or {}).get("uuid") == station["uuid"]:
+            self.app.state.update("player", favorite=radio.is_favorite(station["uuid"]))
+        self.app.page_changed("/radio/*")
+
+    async def _alt_radio(self, path, rest, key):
+        stations, index = await self._station(rest, key)
+        if index is None:
+            return None
+        station = stations[index]
+
+        def choose(choice):
+            if choice == "favorite":
+                self._toggle_station(station)
+        return {"sheet": {"title": station["name"], "token": self._token(choose),
+                          "items": [self._favorite_row(self.app.radio.is_favorite(station["uuid"]))]}}
 
     # videos ----------------------------------------------------------------
 

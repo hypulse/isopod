@@ -3,11 +3,14 @@ wait 2500
 shot 80-home-art.png
 key down
 wait 700
+shot 80-home-radio.png
+key down
+wait 700
 shot 81-home-video.png
 key down
 wait 700
 shot 82-home-settings.png
-hold up 2
+hold up 3
 key confirm
 wait 1500
 shot 85-music-menu.png
