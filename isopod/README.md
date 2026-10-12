@@ -33,6 +33,9 @@ replaces the front end with a small shell built around your music.
   Bluetooth headset, never above the limit, and each comes back where it was left after a
   restart. A headset's own volume buttons count.
 - **Wi-Fi** remembers every network you join.
+- **A cable** to a computer shows the libraries as an MTP device, `Music` and `Videos`, a
+  second card being the `SD Card` folder in each. What was copied is in the library once
+  the cable is out. A Mac needs an MTP app for this, such as OpenMTP.
 - **Multitasking**: a video keeps its place. Home pauses it where it is, and the home
   screen lists it so you can pick it up again. Music and a video never sound together:
   starting one pauses the other.
@@ -114,7 +117,8 @@ The recipes that put these in the image are in `projects/ROCKNIX/packages/isopod
    red light. An SP with the newer panel takes `sun50i-h700-anbernic-rg35xx-sp-v2-panel.dtb`.
 4. Add music and videos on a second microSD card (exFAT works with any computer): put
    them in its `music` and `videos` folders, lyrics beside their songs. isoPod creates the
-   folders on first boot and shows the card as an `SD Card` folder in each library.
+   folders on first boot and shows the card as an `SD Card` folder in each library. With
+   the card in the device, a USB cable to a computer reaches the same folders.
 
 ## Build
 

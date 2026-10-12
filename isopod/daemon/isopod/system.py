@@ -19,6 +19,7 @@ class System:
     def __init__(self, sim=False, sysfs="/sys"):
         self.sim = sim
         self.sysfs = sysfs
+        self._usb_ours = False
 
     async def rocknix_setting(self, key, value):
         if self.sim or not os.path.exists(FUNCTIONS):
@@ -85,6 +86,17 @@ class System:
             await run("rocknix-bluetooth", "enable" if on else "disable", timeout=20)
         else:
             await self.rocknix_setting("controllers.bluetooth.enabled", 1 if on else 0)
+
+    async def usb_transfer(self, on):
+        """ROCKNIX's USB gadget as an MTP device while a cable is in, and off without one,
+        which is how it boots fastest. Its network mode, where someone chose it, is left alone."""
+        if self.sim or not shutil.which("usbgadget"):
+            return
+        if on:
+            _, mode, _ = await run("usbgadget")
+            self._usb_ours = mode.strip() != "network"
+        if self._usb_ours:
+            await run("usbgadget", "file_transfer" if on else "disabled", timeout=15)
 
     def uptime(self):
         return _uptime()

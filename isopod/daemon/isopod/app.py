@@ -49,7 +49,9 @@ class App:
                            lost=self._route_lost, first=self.system.rocknix_volume)
         self.power = Power(self.state, self.settings, self, sim=self.sim,
                            remember=lambda percent: spawn(self.system.rocknix_setting("display.brightness", percent)))
-        self.battery = Battery(self.state, notify=self._battery_low, sim=self.sim)
+        self.battery = Battery(self.state, notify=self._battery_low, sim=self.sim,
+                               cable=lambda plugged: spawn(self._cable(plugged)))
+        self._cable_lock = asyncio.Lock()
         runner = getattr(args, "apps", None) or ("sim" if self.sim else "systemd")
         self.apps = Apps(self.state, self, {k: v for k, v in os.environ.items() if k in APP_ENV_KEYS},
                          runner=runner)
@@ -76,6 +78,14 @@ class App:
             spawn(self._rescan_later())
         log.info("isoPod %s ready", __version__)
         await asyncio.Event().wait()
+
+    async def _cable(self, plugged):
+        """A computer at the other end of the cable gets the libraries for as long as it is
+        in, and what it copied is in the library once it is out."""
+        async with self._cable_lock:
+            await self.system.usb_transfer(plugged)
+            if not plugged:
+                await self.music.update_library()
 
     async def _rescan_later(self, delay=10):
         """Pick up files copied while the device was off, once boot has settled."""

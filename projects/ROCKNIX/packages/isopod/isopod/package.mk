@@ -13,7 +13,7 @@ PKG_TOOLCHAIN="manual"
 
 makeinstall_target() {
   mkdir -p ${INSTALL}/usr/share/isopod
-  cp ${ROOT}/isopod/system/sway.conf ${INSTALL}/usr/share/isopod/
+  cp ${ROOT}/isopod/system/sway.conf ${ROOT}/isopod/system/umtprd.conf ${INSTALL}/usr/share/isopod/
   cp -r ${ROOT}/isopod/system/mpv ${INSTALL}/usr/share/isopod/
 
   # ROCKNIX's chksysconfig reads a missing RetroArch config as lost settings and copies

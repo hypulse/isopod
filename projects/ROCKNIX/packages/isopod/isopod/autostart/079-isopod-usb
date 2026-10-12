@@ -1,0 +1,10 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026-present isoPod (https://github.com/hypulse/isopod)
+
+# Over the cable a computer gets the two libraries by MTP. ROCKNIX's usbgadget starts
+# umtprd with /etc/umtprd/umtprd.conf, which lists /storage/roms, so isoPod's covers it:
+# before 081-usbgadget, which starts the gadget if it was left on at power off.
+mkdir -p /storage/music /storage/videos
+grep -qs " /etc/umtprd/umtprd.conf " /proc/mounts ||
+  mount --bind /usr/share/isopod/umtprd.conf /etc/umtprd/umtprd.conf

@@ -25,9 +25,11 @@ class Battery:
     INTERVAL = 30
     WARN_AT = (20, 10, 5)
 
-    def __init__(self, state, notify=None, sim=False, root="/sys/class/power_supply"):
+    def __init__(self, state, notify=None, cable=None, sim=False, root="/sys/class/power_supply"):
         self.state = state
         self.notify = notify or (lambda percent: None)
+        self.cable = cable or (lambda plugged: None)
+        self._plugged = False
         self.sim = sim
         self.root = root
         self._warned = 101
@@ -46,8 +48,12 @@ class Battery:
             self.refresh()
 
     def refresh(self):
-        battery = next((d for d in sorted(glob.glob(os.path.join(self.root, "*")))
-                        if _read(os.path.join(d, "type")) == "Battery"), None)
+        supplies = sorted(glob.glob(os.path.join(self.root, "*")))
+        battery = next((d for d in supplies if _read(os.path.join(d, "type")) == "Battery"), None)
+        plugged = any(d != battery and _read(os.path.join(d, "online")) == "1" for d in supplies)
+        if plugged != self._plugged:
+            self._plugged = plugged
+            self.cable(plugged)
         if not battery:
             return
         percent = _read(SMOOTHED) or _read(os.path.join(battery, "capacity")) or "0"

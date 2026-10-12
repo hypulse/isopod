@@ -269,6 +269,50 @@ class FolderListingTest(unittest.TestCase):
         self.assertEqual(files, ["Arc.webm", "The Road.mkv", "데미안.mp4"])
 
 
+class CableTest(unittest.IsolatedAsyncioTestCase):
+    async def test_the_cable_going_in_and_coming_out_is_told_once_each(self):
+        root, cable = tempfile.mkdtemp(), []
+
+        def supply(name, **values):
+            os.makedirs(os.path.join(root, name), exist_ok=True)
+            for key, value in values.items():
+                with open(os.path.join(root, name, key), "w") as f:
+                    f.write(value)
+
+        supply("axp20x-battery", type="Battery", capacity="80", status="Charging", online="1")
+        supply("axp20x-usb", type="USB", online="1")
+        battery = Battery(State(lambda snap: None), cable=cable.append, root=root)
+        battery.refresh()
+        battery.refresh()
+        self.assertEqual(cable, [True])
+        supply("axp20x-usb", online="0")
+        battery.refresh()
+        battery.refresh()
+        self.assertEqual(cable, [True, False], "the battery, always there, is not the cable")
+
+    async def gadget(self, mode):
+        """ROCKNIX's usbgadget: without a word it says its mode, with one it is given one."""
+        d = tempfile.mkdtemp()
+        with open(os.path.join(d, "usbgadget"), "w") as f:
+            f.write(f'#!/bin/sh\n[ $# = 0 ] && echo {mode} || echo "$1" >>{d}/asked\n')
+        os.chmod(os.path.join(d, "usbgadget"), 0o755)
+        path = os.environ["PATH"]
+        os.environ["PATH"] = d + os.pathsep + path
+        try:
+            system = System()
+            await system.usb_transfer(True)
+            await system.usb_transfer(False)
+        finally:
+            os.environ["PATH"] = path
+        return open(os.path.join(d, "asked")).read().split() if os.path.exists(os.path.join(d, "asked")) else []
+
+    async def test_files_are_offered_while_the_cable_is_in(self):
+        self.assertEqual(await self.gadget("disabled"), ["file_transfer", "disabled"])
+
+    async def test_rocknix_network_mode_is_left_alone(self):
+        self.assertEqual(await self.gadget("network"), [])
+
+
 class BatteryWarningTest(unittest.TestCase):
     def test_warns_once_per_level_and_resets_on_charge(self):
         said = []
