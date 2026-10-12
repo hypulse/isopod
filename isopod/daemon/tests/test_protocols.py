@@ -817,6 +817,28 @@ class AppsTest(unittest.IsolatedAsyncioTestCase):
         await self.apps.launch(spec("d"), "d")
         self.assertNotIn("b", self.apps.running, "the app used longest ago closes first")
 
+    async def test_on_the_device_a_waiting_app_is_stopped_and_closed_as_it_is(self):
+        """`systemctl freeze` refuses on ROCKNIX's hybrid cgroups. A stopped unit needs no
+        waking before `systemctl stop`: systemd sends SIGCONT after its SIGTERM."""
+        module, ran = sys.modules[Apps.__module__], []
+
+        async def run(*args, **kwargs):
+            ran.append(" ".join(args))
+            return 0, "active", ""
+        self.addCleanup(setattr, module, "run", module.run)
+        module.run = run
+        apps = Apps(State(lambda snap: None), FakeEvents(), {}, runner="systemd")
+        await apps.launch(AppSpec("a", "a", ["a"]), "a")
+        await apps.home()
+        await apps.resume("a")
+        await apps.set_dark(True)
+        await apps.close("a")
+        self.assertEqual([c for c in ran if c.startswith("systemctl")], [
+            "systemctl kill --signal=SIGSTOP isopod-a-2.service",
+            "systemctl kill --signal=SIGCONT isopod-a-2.service",
+            "systemctl kill --signal=SIGSTOP isopod-a-2.service",
+            "systemctl stop isopod-a-2.service"])
+
 
 class LyricsTest(unittest.TestCase):
     def test_synced_lrc(self):

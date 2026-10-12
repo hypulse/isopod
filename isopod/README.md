@@ -106,7 +106,7 @@ otherwise, and a paused video lets the screen go dark like any list.
 | isopod-shell | `isopod/shell` | C and SDL2 renderer at 640×480. Draws what isopodd describes and nothing else |
 | MPD | `projects/ROCKNIX/packages/isopod/mpd` | Plays music and radio through PipeWire |
 | sway | ROCKNIX | Shows the shell on workspace 1 and each app on a workspace of its own |
-| systemd | ROCKNIX | Runs each app as a transient unit, frozen while it waits in the background |
+| systemd | ROCKNIX | Runs each app as a transient unit, stopped (SIGSTOP) while it waits in the background |
 
 The recipes that put these in the image are in `projects/ROCKNIX/packages/isopod`.
 
@@ -195,8 +195,8 @@ Daemon tests: `python3 -m unittest discover -s isopod/daemon/tests`.
 
 This is a demo. The shell, pages and the MPD client are exercised in the simulator, and
 mpv and multitasking on the desk. The parts that talk to the hardware, BlueZ,
-NetworkManager, PipeWire, evdev, systemd freezing and suspend, still need a pass on the
-device.
+NetworkManager, PipeWire, evdev, stopping a real app in the background and suspend, still
+need a pass on the device.
 
 ## Credits
 

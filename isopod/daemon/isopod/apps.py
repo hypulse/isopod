@@ -109,8 +109,8 @@ def catalog(data_dir, sim=False, run_dir="/run/isopod"):
 
 class Apps:
     """External programs, one sway workspace each. On the device each is a transient systemd
-    unit frozen through its cgroup; a desktop session runs them as process groups stopped with
-    SIGSTOP; the simulator only records the launch."""
+    unit and in a desktop session a process group; one that waits in the background is
+    stopped with SIGSTOP either way. The simulator only records the launch."""
 
     def __init__(self, state, events, env, sim=False, runner=None):
         self.state = state
@@ -155,7 +155,7 @@ class Apps:
         return app["awake"] if app and app["playing"] else None
 
     async def pause_media(self):
-        """Pause a playing video. One frozen in the background is silent and stays as it is."""
+        """Pause a playing video. One stopped in the background is silent and stays as it is."""
         for app in list(self.running.values()):
             if app["control"] and not app["frozen"] and not self.sim:
                 await _mpv(app["control"], ["set_property", "pause", True])
@@ -202,24 +202,29 @@ class Apps:
         finally:
             writer.close()
 
-    async def _signal(self, app, verb):
+    async def _signal(self, app, sig):
+        """SIGSTOP and SIGCONT, not systemd's freezer: that wants a unified cgroup tree and
+        ROCKNIX mounts a hybrid one. A stopped unit can still be closed or shut down with
+        the rest, since systemd follows its SIGTERM with a SIGCONT."""
         if self.runner == "direct":
-            self._group(app, signal.SIGSTOP if verb == "freeze" else signal.SIGCONT)
-        elif not self.sim:
-            await run("systemctl", verb, f"{app['unit']}.service")
+            self._group(app, sig)
+        elif self.runner == "systemd":
+            code, _, err = await run("systemctl", "kill", f"--signal={sig.name}", f"{app['unit']}.service")
+            if code != 0:
+                log.warning("%s for %s failed: %s", sig.name, app["unit"], err.strip())
 
     async def _park(self, app):
-        """Freeze an app where it is. A playing video is paused first: it is then silent
-        beside the music whatever the freezer does, and its sound starts clean when it
+        """Stop an app where it is. A playing video is paused first: it is then silent
+        beside the music whether or not it stops, and its sound starts clean when it
         comes back."""
         if app["control"] and app["playing"] and not self.sim:
             app["held"] = True
             await _mpv(app["control"], ["set_property", "pause", True])
-        await self._signal(app, "freeze")
+        await self._signal(app, signal.SIGSTOP)
         app["frozen"] = True
 
     async def _unpark(self, app):
-        await self._signal(app, "thaw")
+        await self._signal(app, signal.SIGCONT)
         app["frozen"] = False
         if app.pop("held", False) and not self.sim:
             await _mpv(app["control"], ["set_property", "pause", False])
@@ -315,7 +320,7 @@ class Apps:
                 return
 
     async def home(self):
-        """Freeze the front app and bring the shell forward."""
+        """Stop the front app and bring the shell forward."""
         key = self.front
         if key is None:
             return
@@ -359,7 +364,6 @@ class Apps:
             self._group(app, signal.SIGKILL)
             await app["proc"].wait()
         elif not self.sim:
-            await run("systemctl", "thaw", f"{app['unit']}.service")
             await run("systemctl", "stop", f"{app['unit']}.service", timeout=6)
         if self.front == key:
             self.front = None
