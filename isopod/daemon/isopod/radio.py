@@ -21,15 +21,32 @@ log = logging.getLogger("isopod.radio")
 
 DIRECTORY = "all.api.radio-browser.info"
 USER_AGENT = f"isopod/{__version__}"
-GENRES = ("pop", "rock", "jazz", "classical", "electronic", "hiphop", "soul", "blues", "country", "metal",
-          "chillout", "oldies", "80s", "90s", "news", "talk")
-# Stations tag themselves in their own words, in any order: these are the genres among them.
-ALIASES = {"pop music": "pop", "top 40": "pop", "hits": "pop", "classic rock": "rock", "alternative": "rock",
-           "indie": "rock", "smooth jazz": "jazz", "classical music": "classical", "electronica": "electronic",
-           "dance": "electronic", "house": "electronic", "techno": "electronic", "trance": "electronic",
-           "hip hop": "hiphop", "hip-hop": "hiphop", "rap": "hiphop", "r&b": "soul", "rnb": "soul", "funk": "soul",
-           "country music": "country", "heavy metal": "metal", "chill": "chillout", "lounge": "chillout",
-           "ambient": "chillout", "60s": "oldies", "70s": "oldies", "information": "news", "talk radio": "talk"}
+# The genres isoPod lists, each with the tags the directory is asked for it: stations tag
+# themselves in their own words. Their order is the order a station's own genre is picked in,
+# the narrower before the wider.
+GENRES = {
+    "classicrock": ("classic rock",), "hardrock": ("hard rock",), "alternative": ("alternative", "alternative rock"),
+    "indie": ("indie", "indie rock"), "punk": ("punk", "punk rock"), "metal": ("metal", "heavy metal"),
+    "newwave": ("new wave",), "rock": ("rock",), "jazz": ("jazz",), "blues": ("blues",), "soul": ("soul",),
+    "funk": ("funk",), "rnb": ("rnb", "r&b"), "disco": ("disco",), "hiphop": ("rap", "hiphop", "hip-hop"),
+    "reggae": ("reggae",), "gospel": ("gospel",), "house": ("house",), "techno": ("techno",), "trance": ("trance",),
+    "dnb": ("drum and bass",), "ambient": ("ambient",), "lofi": ("lofi", "lo-fi"), "chillout": ("chillout", "chill"),
+    "lounge": ("lounge",), "dance": ("dance", "edm"), "electronic": ("electronic", "electro"), "opera": ("opera",),
+    "piano": ("piano",), "soundtrack": ("soundtrack",), "instrumental": ("instrumental",),
+    "classical": ("classical",), "easy": ("easy listening",), "kpop": ("kpop", "k-pop"), "jpop": ("jpop", "j-pop"),
+    "anime": ("anime",), "country": ("country",), "folk": ("folk",), "salsa": ("salsa",),
+    "reggaeton": ("reggaeton",), "latin": ("latino", "latin"), "world": ("world music", "world"),
+    "christian": ("christian",), "kids": ("kids", "children"), "pop": ("pop",), "oldies": ("oldies",),
+    "news": ("news",), "talk": ("talk",), "sports": ("sports", "sport"), "comedy": ("comedy",),
+    "culture": ("culture",), "50s": ("50s",), "60s": ("60s", "60's"), "70s": ("70s", "70's"), "80s": ("80s", "80's"),
+    "90s": ("90s", "90's"), "00s": ("2000s", "00s"), "10s": ("2010s", "10s"),
+}
+DECADES = ("50s", "60s", "70s", "80s", "90s", "00s", "10s")
+ALIASES = {tag: genre for genre, tags in GENRES.items() for tag in tags}
+ALIASES.update({"pop music": "pop", "top 40": "pop", "hits": "pop", "smooth jazz": "jazz", "hip hop": "hiphop",
+                "classical music": "classical", "electronica": "electronic", "deep house": "house",
+                "country music": "country", "classic hits": "oldies", "information": "news", "local news": "news",
+                "news talk": "talk", "talk radio": "talk"})
 FETCH, KEEP = 150, 100
 LIFE = 7 * 24 * 3600  # what is kept is fetched again once it is a week old
 RETRY = 600
@@ -197,13 +214,18 @@ class Radio:
         params = {"order": "clickcount", "reverse": "true", "limit": FETCH, "hidebroken": "true"}
         kind, _, name = key.partition("-")
         if kind == "genre":
-            params.update(tag=name, tagExact="true")
-        elif kind == "country":
+            return await self._stations(*({**params, "tag": tag, "tagExact": "true"} for tag in GENRES[name]))
+        if kind == "country":
             params["countrycode"] = name
-        return await self._stations(**params)
+        return await self._stations(params)
 
-    async def _stations(self, **params):
-        raw = await self._directory.get("/json/stations/search", **params)
+    async def _stations(self, *searches):
+        """The most played of what the searches find together, each station once."""
+        raw = []
+        for params in searches:
+            raw += await self._directory.get("/json/stations/search", **params)
+        if len(searches) > 1:
+            raw.sort(key=lambda r: -int(r.get("clickcount") or 0))
         return unique([station_from_api(r) for r in raw])[:KEEP]
 
     async def _keep(self, key):
@@ -262,8 +284,8 @@ class Radio:
         """Asked of the directory each time; an answer is kept only while isoPod stays on."""
         key = _fold(name)
         if key not in self._found:
-            found = await self._stations(name=name, order="clickcount", reverse="true", limit=FETCH,
-                                         hidebroken="true")
+            found = await self._stations(dict(name=name, order="clickcount", reverse="true", limit=FETCH,
+                                              hidebroken="true"))
             if len(self._found) >= 20:
                 del self._found[next(iter(self._found))]
             self._found[key] = found

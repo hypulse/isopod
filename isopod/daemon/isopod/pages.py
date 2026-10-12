@@ -5,7 +5,7 @@ import secrets
 import zlib
 
 from .countries import NAMES as COUNTRIES, country_name
-from .radio import GENRES, RadioError
+from .radio import DECADES, GENRES, RadioError
 from .system import human_size
 from .util import enc, sort_key, spawn, split_path
 
@@ -523,7 +523,10 @@ class Pages:
         kind = rest[0]
         name = rest[1] if len(rest) > 1 else ""
         if kind == "genres":
-            return page(path, t("genres"), [item("g:" + g, t("genre_" + g)) for g in GENRES])
+            rows = sorted((item("g:" + g, t("genre_" + g)) for g in GENRES if g not in DECADES),
+                          key=lambda row: sort_key(row["title"]))
+            rows += [header(t("decades"))] + [item("g:" + g, t("genre_" + g)) for g in DECADES]
+            return page(path, t("genres"), rows, index=True)
         title = {"favorites": t("favorites"), "top": t("popular"), "countries": t("countries"),
                  "genre": t("genre_" + name) if name in GENRES else name, "country": self._country(name),
                  "search": t("search_for", q=name)}.get(kind) or ""

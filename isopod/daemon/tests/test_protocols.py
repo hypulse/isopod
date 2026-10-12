@@ -387,7 +387,9 @@ class RadioTest(unittest.IsolatedAsyncioTestCase):
     def test_a_station_as_isopod_keeps_it(self):
         s = station_from_api(on_air("x", " Jazz ", codec="UNKNOWN"))
         self.assertEqual((s["name"], s["codec"], s["genres"], s["country"]),
-                         ("Jazz", "", ["jazz", "chillout"], "FR"), "of its own words, the genres isoPod lists")
+                         ("Jazz", "", ["jazz", "lounge"], "FR"), "of its own words, the genres isoPod lists")
+        self.assertEqual(station_from_api(on_air("r", "R", tags="rock,classic rock,2000s"))["genres"],
+                         ["classicrock", "rock"], "the narrower genre first")
         self.assertEqual(station_from_api(on_air("n", "N", tags="1930,aac,france,Hip-Hop"))["genres"], ["hiphop"])
         hls = station_from_api(on_air("y", "Live", url_resolved="https://x/playlist.m3u8", hls=1))
         self.assertEqual(hls["url"], "hls+https://x/playlist.m3u8", "the scheme MPD plays HLS under")
@@ -574,14 +576,16 @@ class RadioPagesTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_the_menu_and_what_a_row_says_of_a_station(self):
         self.assertEqual(await self.rows("/radio"), ["Favorites", "Popular", "Genres", "Countries", "Search"])
-        self.assertEqual((await self.rows("/radio/genres"))[:3], ["Pop", "Rock", "Jazz"])
+        genres = await self.rows("/radio/genres")
+        self.assertEqual(genres[:3] + genres[-3:], ["Alternative", "Ambient", "Anime", "90s", "2000s", "2010s"],
+                         "by name, and the decades after them in their own order")
         self.assertEqual((await self.pages.activate("/radio/genres", "g:jazz"))["push"], "/radio/genre/jazz")
         self.assertEqual(await self.rows("/radio/countries"), ["France", "Japan"])
         self.assertEqual((await self.pages.activate("/radio/countries", "c:JP"))["push"], "/radio/country/JP")
         self.assertEqual(await self.rows("/radio/top", "subtitle"), ["France · Jazz", "Japan · Jazz", "France"])
         self.assertEqual(await self.rows("/radio/genre/jazz", "subtitle"), ["France", "Japan", "France"],
                          "the list says what they play")
-        self.assertEqual(await self.rows("/radio/country/FR", "subtitle"), ["Jazz · Chillout"] * 2 + [None],
+        self.assertEqual(await self.rows("/radio/country/FR", "subtitle"), ["Jazz · Lounge"] * 2 + [None],
                          "the list says where they are")
         self.assertEqual((await self.pages.build("/radio/country/FR"))["title"], "France")
         search = (await self.pages.resolve((await self.pages.activate("/radio", "search"))["input"]["token"],
