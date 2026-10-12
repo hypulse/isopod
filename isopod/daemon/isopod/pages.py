@@ -183,15 +183,25 @@ class Pages:
     def _empty_music(self):
         return empty("music", self.t("no_music_title"), self.t("no_music_text"))
 
-    def _song_items(self, songs, playing_file=None):
-        return [item(f"s{i}", s["title"], "playing" if s["file"] == playing_file else "none")
-                for i, s in enumerate(songs)]
+    def _song_items(self, songs, playing_file=None, stars=True):
+        favorites = set(self.app.music.favorites) if stars else ()
+        return [item(f"s{i}", s["title"], "playing" if s["file"] == playing_file else "none",
+                     star=s["file"] in favorites or None) for i, s in enumerate(songs)]
+
+    def _favorite_option(self, file):
+        on = file in self.app.music.favorites
+        return {"key": "favorite", "title": self.t("favorite"), "value": self.t("on") if on else None}
+
+    async def _toggle_favorite(self, file):
+        await self.app.music.set_favorite(file, file not in self.app.music.favorites)
 
     async def _songs_for(self, rest):
         m = self.app.music
         kind = rest[0] if rest else ""
         if kind == "songs":
             return m.all_songs()
+        if kind == "favorites":
+            return m.favorite_songs()
         if kind == "album" and len(rest) >= 3:
             return m.album_songs(rest[1], rest[2])
         if kind == "artist" and len(rest) >= 3 and rest[2] == "all":
@@ -240,9 +250,12 @@ class Pages:
                           for i, ((artist, album), _) in enumerate(albums)]
             if songs:
                 items.append(header(t("songs")))
+                favorites = set(m.favorites)
                 items += [item(f"s{i}", s["title"], "playing" if s["file"] == playing else "none",
-                               value=s["artist"] or None) for i, s in enumerate(songs)]
-            return page(path, rest[1], items, live=True, empty=empty("search", t("no_results")))
+                               value=s["artist"] or None, star=s["file"] in favorites or None)
+                          for i, s in enumerate(songs)]
+            return page(path, t("search_for", q=rest[1]), items, live=True,
+                        empty=empty("search", t("no_results")))
         if kind == "artists":
             names = m.artists()
             items = [item("a:" + n, n or t("unknown_artist")) for n in names]
@@ -266,8 +279,9 @@ class Pages:
             items = [item("g:" + g, g) for g in m.genres()]
             return page(path, t("genres"), items, empty=self._empty_music())
         if kind == "playlists":
-            items = [item("p:" + p, p) for p in await m.playlists()]
-            return page(path, t("playlists"), items, empty=empty("music", t("empty_list")))
+            items = [item("favorites", t("favorites"))]
+            items += [item("p:" + p, p) for p in await m.playlists()]
+            return page(path, t("playlists"), items)
         if kind == "queue":
             songs = await m.queue()
             pos = self.app.state.get("player")["pos"]
@@ -279,9 +293,12 @@ class Pages:
         if songs is None:
             return page(path, "", [])
         titles = {"songs": t("songs"), "album": rest[-1] if len(rest) > 2 else "",
-                  "artist": rest[1] if len(rest) > 1 else "", "genre": rest[-1], "playlist": rest[-1]}
+                  "artist": rest[1] if len(rest) > 1 else "", "genre": rest[-1], "playlist": rest[-1],
+                  "favorites": t("favorites")}
+        nothing = (empty("star", t("no_favorites_title"), t("no_favorites_text"))
+                   if kind == "favorites" else self._empty_music())
         return page(path, titles.get(kind) or t("unknown_album"),
-                    self._song_items(songs, playing), empty=self._empty_music(),
+                    self._song_items(songs, playing, stars=kind != "favorites"), empty=nothing,
                     index=kind == "songs", live=True)
 
     async def _do_music(self, path, rest, key):
@@ -313,7 +330,7 @@ class Pages:
         if kind == "genres":
             return {"push": "/music/genre/" + enc(key[2:])}
         if kind == "playlists":
-            return {"push": "/music/playlist/" + enc(key[2:])}
+            return {"push": "/music/favorites" if key == "favorites" else "/music/playlist/" + enc(key[2:])}
         if kind == "queue":
             await m.play_position(int(key[1:]))
             return {"nowplaying": True}
@@ -328,7 +345,8 @@ class Pages:
             return None
         song = songs[int(key[1:])]
         options = [{"key": "next", "title": self.t("play_next")},
-                   {"key": "later", "title": self.t("add_to_up_next")}]
+                   {"key": "later", "title": self.t("add_to_up_next")},
+                   self._favorite_option(song["file"])]
         if rest[0] != "album" and song["album"]:
             options.append({"key": "album", "title": self.t("go_to_album")})
 
@@ -337,6 +355,8 @@ class Pages:
                 await self.app.music.enqueue(song, next_up=choice == "next")
                 self.app.toast(self.t("added_up_next"), "music")
                 return {"none": True}
+            if choice == "favorite":
+                await self._toggle_favorite(song["file"])
             if choice == "album":
                 return {"push": "/music/album/" + enc(song["albumartist"], song["album"])}
         return {"sheet": {"title": song["title"], "items": options, "token": self._token(choose)}}
@@ -390,7 +410,9 @@ class Pages:
         left = self.app.power.sleep_timer_left()
         timer = {"key": "timer", "title": t("sleep_timer"), "value": t("minutes", n=left) if left else None}
         repeat = (t("repeat_one") if player["single"] else t("on")) if player["repeat"] else None
-        options = [
+        file = player.get("file")
+        options = [self._favorite_option(file)] if file else []
+        options += [
             {"key": "shuffle", "title": t("shuffle"), "value": t("on") if player["shuffle"] else None},
             {"key": "repeat", "title": t("repeat"), "value": repeat},
             {"key": "queue", "title": t("up_next")},
@@ -401,7 +423,9 @@ class Pages:
 
         async def choose(choice):
             m = self.app.music
-            if choice == "shuffle":
+            if choice == "favorite":
+                await self._toggle_favorite(file)
+            elif choice == "shuffle":
                 await m.set_shuffle(not player["shuffle"])
             elif choice == "repeat":
                 await m.cycle_repeat()

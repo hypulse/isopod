@@ -39,6 +39,7 @@ class App:
         self.system = System(sim=self.sim)
         self.music = Music(MPD(args.mpd, args.mpd_port), self.state, args.cache, music_dir=args.music)
         self.music.song_changed = lambda: self.page_changed("/nowplaying", "/nowplaying/lyrics")
+        self.music.favorites_changed = lambda: self.page_changed("/music/*")
         self.bluetooth = Bluetooth(FakeBackend() if self.sim else RavelBackend(),
                                    self.state, self.settings, self.t, self, self.system)
         # ROCKNIX switches Wi-Fi by its own setting at boot and on every wake.

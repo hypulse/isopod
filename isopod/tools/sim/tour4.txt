@@ -16,7 +16,7 @@ key confirm
 wait 600
 key more
 wait 300
-hold down 4
+hold down 5
 key confirm
 wait 400
 shot 53-sleep-timer.png

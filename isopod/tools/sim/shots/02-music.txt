@@ -25,6 +25,7 @@ wait 700
 key home
 open /music/playlists
 shot 09-playlists.png
+key down
 key confirm
 shot 10-playlist.png
 key home
@@ -89,3 +90,25 @@ type qqq
 key play
 wait 700
 shot 29-search-no-results.png
+key home
+open /music/favorites
+shot 30-favorites-empty.png
+key home
+open /music/album/Aurora Lane/Night Drive
+key more
+hold down 2
+shot 31-favorite-option.png
+key confirm
+key down
+key down
+key more
+hold down 2
+key confirm
+wait 400
+shot 32-album-favorites.png
+key home
+open /music/favorites
+shot 33-favorites.png
+key more
+hold down 2
+shot 34-favorite-on.png

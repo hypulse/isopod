@@ -14,6 +14,9 @@ replaces the front end with a small shell built around your music.
 - **Now Playing** shows the song's cover over its reflection, its title, artist and album,
   and a line with its year, genre and kind of file. With timed lyrics the line being sung
   and the one after it stand under the cover.
+- **Favorites**: X on a song, in a list or in Now Playing, makes it a favorite or no longer
+  one. Favorites is the first of the playlists, and a star marks a favorite wherever it is
+  listed.
 - **Lyrics**, all of them, are a press of Y away: timed lyrics follow the line being sung,
   plain ones scroll. They come from an `.lrc` or `.txt` file beside the song and named
   like it (`Song.mp3`, `Song.lrc`), or from the song's own tags.

@@ -52,14 +52,15 @@ wait 1500
 key play
 wait 1800
 
-caption X · 옵션: 셔플, 반복, 다음 재생, 앨범, 잠자기 타이머
+caption X · 옵션: 즐겨찾기, 셔플, 반복, 다음 재생, 앨범, 잠자기 타이머
 key more
 wait 2200
+key down
 key confirm
 wait 1500
 key more
 wait 900
-hold down 4
+hold down 5
 wait 700
 key confirm
 wait 1500

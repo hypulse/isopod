@@ -14,7 +14,7 @@ from isopod.audio import Audio, FakeAudio, _sink  # noqa: E402
 from isopod import uevents  # noqa: E402
 from isopod.battery import Battery  # noqa: E402
 from isopod.bluetooth import A2DP_SINK, Backend, Bluetooth, Device, RavelBackend  # noqa: E402
-from isopod.mpd import MPD, filter_expr, quote, records, values  # noqa: E402
+from isopod.mpd import MPD, MPDError, filter_expr, quote, records, values  # noqa: E402
 from isopod.music import Music  # noqa: E402
 from isopod.pages import VIDEO_EXTS, Pages, folder_listing  # noqa: E402
 from isopod.apps import AppSpec, Apps  # noqa: E402
@@ -194,6 +194,73 @@ class NoAlbumTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await opened(blur, "all"), ["Loose", "Tracy Jacks"], "the loose song is with its artist")
         nobody = (await pages.activate("/music/artists", "a:"))["push"]
         self.assertEqual(await opened(nobody, "all"), ["Nameless", "Track 1"])
+
+
+class FavoritesTest(unittest.IsolatedAsyncioTestCase):
+    """A favourite is a song in a playlist MPD keeps, and that playlist is the first one listed."""
+
+    async def test_a_song_is_marked_listed_and_taken_out_again(self):
+        class Mpd:
+            stored = {"Drive": ["a.mp3"]}
+
+            async def call(self, name, *args):
+                if name == "listplaylists":
+                    return [("playlist", p) for p in self.stored]
+                if name == "listplaylist":
+                    if args[0] not in self.stored:
+                        raise MPDError("ACK [50@0] {listplaylist} No such playlist")
+                    return [("file", f) for f in self.stored[args[0]]]
+                if name == "playlistadd":
+                    self.stored.setdefault(args[0], []).append(args[1])
+                return []
+
+            async def call_list(self, commands):
+                for _, name, index in commands:
+                    del self.stored[name][int(index)]
+
+        class NoApp:
+            t = Translator("en")
+            state = State(lambda snap: None)
+
+            class power:
+                sleep_timer_left = staticmethod(lambda: 0)
+
+        app = NoApp()
+        music = app.music = Music(Mpd(), app.state, tempfile.mkdtemp())
+        music.songs = [{"file": f, "title": f[0].upper(), "artist": "", "albumartist": "", "album": ""}
+                       for f in ("a.mp3", "b.mp3", "c.mp3")]
+        music._by_file = {s["file"]: s for s in music.songs}
+        app.state.data["player"]["file"] = "b.mp3"
+        pages = Pages(app)
+
+        async def choose(sheet):
+            await pages.resolve(sheet["sheet"]["token"], "favorite")
+
+        async def rows(path, field="title"):
+            return [i.get(field) for i in (await pages.build(path))["items"]]
+
+        await music.load_favorites()
+        self.assertEqual(await rows("/music/playlists"), ["Favorites", "Drive"])
+        self.assertEqual(await rows("/music/favorites"), [], "MPD has no such playlist yet")
+
+        for key in ("s2", "s1"):
+            sheet = await pages.alt("/music/songs", key)
+            self.assertIn({"key": "favorite", "title": "Favorite", "value": None}, sheet["sheet"]["items"])
+            await choose(sheet)
+        self.assertEqual(await rows("/music/favorites"), ["C", "B"], "in the order they were added")
+        self.assertEqual(await rows("/music/songs", "star"), [None, True, True])
+        self.assertEqual(await rows("/music/playlists"), ["Favorites", "Drive"], "and listed once")
+        self.assertTrue(app.state.get("player")["favorite"], "the song playing is one of them")
+
+        sheet = await pages.now_playing_options()
+        self.assertEqual(sheet["sheet"]["items"][0], {"key": "favorite", "title": "Favorite", "value": "On"})
+        await choose(sheet)
+        self.assertEqual(await rows("/music/favorites"), ["C"])
+        self.assertFalse(app.state.get("player")["favorite"])
+
+        music.songs, music._by_file = [], {}
+        self.assertEqual(await rows("/music/favorites"), [], "a song taken off the card is not listed")
+        self.assertEqual(music.favorites, ["c.mp3"], "and is a favourite again when it is back")
 
 
 class NowPlayingTest(unittest.IsolatedAsyncioTestCase):

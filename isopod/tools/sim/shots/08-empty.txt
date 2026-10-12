@@ -23,3 +23,6 @@ key down
 key confirm
 wait 600
 shot 08-shuffle-with-no-songs.png
+key home
+open /music/favorites
+shot 09-favorites.png

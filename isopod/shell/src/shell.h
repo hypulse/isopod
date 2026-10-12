@@ -16,7 +16,7 @@ typedef struct {
     char *key, *title, *subtitle, *value, *art, *icon, *preview, *link;
     int accessory;
     int signal;
-    bool on, header, lock, spinner;
+    bool on, header, lock, spinner, star;
     char letter[8];
 } Item;
 
@@ -81,7 +81,7 @@ typedef struct {
     double elapsed, duration;
     Uint32 elapsed_at;
     int pos, count;
-    bool shuffle, repeat, single;
+    bool shuffle, repeat, single, favorite;
 } Player;
 
 typedef struct {

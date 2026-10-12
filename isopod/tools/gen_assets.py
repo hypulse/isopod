@@ -63,6 +63,15 @@ def note(d, ox, oy, k):
     poly(d, [(ox + 11.5 * k, oy + 8 * k), (ox + 36 * k, oy + 1 * k), (ox + 36 * k, oy + 7 * k), (ox + 11.5 * k, oy + 14 * k)])
 
 
+def star(d, cx, cy, r):
+    """A five-pointed star, r from its middle to a point, the points a little rounded."""
+    soft = r * 0.07
+    pts = [(cx + k * math.sin(i * math.pi / 5), cy - k * math.cos(i * math.pi / 5))
+           for i, k in enumerate([r - soft, (r - soft) * 0.47] * 5)]
+    poly(d, pts)
+    line(d, pts + pts[:1], soft * 2)
+
+
 def headphones(d, ox, oy, k, width):
     arc(d, ox + 20 * k, oy + 21 * k, 16 * k, 180, 360, width * k)
     rrect(d, ox + 2 * k, oy + 20 * k, ox + 10 * k, oy + 36 * k, 3 * k)
@@ -88,6 +97,7 @@ def empty_icons(P):
         done(img, 72, 72, P("empty-" + name))
 
     glyph("music", lambda d: note(d, 18, 16, 0.9))
+    glyph("star", lambda d: star(d, 36, 37.5, 20))
 
     def wifi(d):
         ellipse(d, 32.5, 45, 39.5, 52)
@@ -194,6 +204,10 @@ def build(out):
     arc(d, 11, 10, 5, -50, 50, 1.8)
     arc(d, 11, 10, 9, -50, 50, 1.8)
     done(img, 22, 20, P("speaker"))
+
+    img, d = canvas(18, 18)
+    star(d, 9, 9.9, 9.45)
+    done(img, 18, 18, P("star"))
 
     img, d = canvas(14, 20)
     arc(d, 7, 8, 4.5, 180, 360, 2.2)

@@ -23,6 +23,10 @@ STRINGS = {
     "add_to_up_next": ("다음 재생 목록에 추가", "Add to Up Next"),
     "added_up_next": ("다음 재생에 추가됨", "Added to Up Next"),
     "go_to_album": ("앨범으로 이동", "Go to Album"),
+    "favorites": ("즐겨찾기", "Favorites"),
+    "favorite": ("즐겨찾기", "Favorite"),
+    "no_favorites_title": ("즐겨찾기가 없어요", "No Favorites"),
+    "no_favorites_text": ("노래에서 X를 눌러 추가해 주세요.", "Press X on a song to add it."),
 
     "nothing_playing": ("재생 중인 항목이 없어요", "Nothing Playing"),
     "no_lyrics": ("가사가 없어요", "No Lyrics"),
@@ -32,6 +36,7 @@ STRINGS = {
 
     "search": ("검색", "Search"),
     "no_results": ("결과가 없어요", "No Results"),
+    "search_for": ("‘{q}’ 검색", "Search for “{q}”"),
     "search_music_prompt": ("아티스트, 앨범, 노래", "Artists, albums, songs"),
     "cover_flow": ("커버 플로우", "Cover Flow"),
     "sleep_timer": ("잠자기 타이머", "Sleep Timer"),

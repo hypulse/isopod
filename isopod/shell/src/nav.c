@@ -239,6 +239,7 @@ static void page_fill(Page *p, cJSON *pg)
         SDL_free(acc);
         d->on = json_bool(it, "on");
         d->lock = json_bool(it, "lock");
+        d->star = json_bool(it, "star");
         d->header = json_bool(it, "header");
         d->spinner = json_bool(it, "spinner");
         d->signal = json_int(it, "signal", -1);
@@ -408,9 +409,13 @@ static bool path_matches(const char *pattern, const char *path)
 
 void nav_reload_path(const char *path)
 {
-    for (int i = 0; i < app.depth; i++)
+    for (int i = 0; i < app.depth; i++) {
+        Page *card = app.stack[i]->card;
         if (path_matches(path, app.stack[i]->path) && app.stack[i]->loaded)
             nav_reload(app.stack[i]);
+        if (card && card->loaded && path_matches(path, card->path))
+            nav_reload(card);
+    }
     if (app.overlay && path_matches(path, app.overlay->path))
         nav_reload(app.overlay);
 }
@@ -940,6 +945,7 @@ void status_update(cJSON *state)
         p->shuffle = json_bool(pl, "shuffle");
         p->repeat = json_bool(pl, "repeat");
         p->single = json_bool(pl, "single");
+        p->favorite = json_bool(pl, "favorite");
     }
     cJSON *vol = cJSON_GetObjectItemCaseSensitive(state, "volume");
     if (vol) {

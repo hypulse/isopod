@@ -17,17 +17,18 @@ key confirm
 key more
 wait 400
 shot 05-options.png
-key confirm
-key more
 key down
 key confirm
 key more
-key down
+hold down 2
+key confirm
+key more
+hold down 2
 key confirm
 wait 400
 shot 06-shuffle-repeat-one.png
 key more
-hold down 4
+hold down 5
 key confirm
 wait 400
 shot 07-sleep-timer.png
@@ -59,3 +60,11 @@ shot 12-cjk.png
 key now
 wait 700
 shot 13-no-lyrics.png
+key now
+key more
+key confirm
+wait 400
+shot 14-favorite.png
+key more
+wait 400
+shot 15-options-favorite.png

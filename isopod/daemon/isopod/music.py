@@ -13,6 +13,7 @@ from .util import matches, sort_key, spawn
 log = logging.getLogger("isopod.music")
 
 LYRIC_EXTS = (".lrc", ".txt")
+FAVORITES = "Favorites"
 
 
 def _int(value, default=0):
@@ -61,7 +62,9 @@ class Music:
         self.music_dir = music_dir
         self.art_dir = os.path.join(cache_dir, "art")
         self.song_changed = lambda: None
+        self.favorites_changed = lambda: None
         self.songs = []
+        self.favorites = []
         self.updating = False
         self._by_file = {}
         self._elapsed = (0.0, time.monotonic())
@@ -81,6 +84,8 @@ class Music:
             self._rescan_soon()
         if subsystems & {"reconnect", "database"}:
             await self.load_library()
+        if subsystems & {"reconnect", "stored_playlist"}:
+            await self.load_favorites()
         if subsystems & {"reconnect", "update"}:
             status = await self._status()
             self.updating = "updating_db" in status
@@ -98,6 +103,27 @@ class Music:
         self._by_file = {s["file"]: s for s in self.songs}
         for fn in self._listeners:
             fn()
+
+    async def load_favorites(self):
+        """The favourites are a playlist MPD keeps, in the order they were added. There is
+        none until the first song is added."""
+        try:
+            favorites = values(await self.mpd.call("listplaylist", FAVORITES), "file")
+        except MPDError:
+            favorites = []
+        if favorites == self.favorites:
+            return
+        self.favorites = favorites
+        self.state.update("player", favorite=self.state.get("player").get("file") in self.favorites)
+        self.favorites_changed()
+
+    async def set_favorite(self, file, on):
+        if on:
+            await self.mpd.call("playlistadd", FAVORITES, file)
+        else:
+            await self.mpd.call_list([("playlistdelete", FAVORITES, str(i))
+                                      for i, f in reversed(list(enumerate(self.favorites))) if f == file])
+        await self.load_favorites()
 
     def _rescan_soon(self):
         """MPD scans nothing when it starts, so songs copied while isoPod was off would stay
@@ -140,7 +166,7 @@ class Music:
             pos=_int(status.get("song"), -1) + 1, count=_int(status.get("playlistlength")),
             shuffle=status.get("random") == "1", repeat=status.get("repeat") == "1",
             single=status.get("single") == "1", title=s["title"], artist=s["artist"], album=s["album"],
-            art=art)
+            art=art, favorite=uri in self.favorites)
         if abs(shown - elapsed) > 1:
             self.state.resend()
 
@@ -282,9 +308,12 @@ class Music:
     def all_songs(self):
         return sorted(self.songs, key=lambda s: sort_key(s["title"]))
 
+    def favorite_songs(self):
+        return [self._by_file[f] for f in self.favorites if f in self._by_file]
+
     async def playlists(self):
         pairs = await self.mpd.call("listplaylists")
-        return sorted(values(pairs, "playlist"), key=sort_key)
+        return sorted((p for p in values(pairs, "playlist") if p != FAVORITES), key=sort_key)
 
     async def playlist_songs(self, name):
         pairs = await self.mpd.call("listplaylistinfo", name)

@@ -132,6 +132,10 @@ static void draw_row(Page *p, int i, int x, int y, int w, bool selected)
         draw_icon("lock", right - 14, y + (h - 20) / 2, selected ? C_WHITE : C_TEXT);
         right -= 26;
     }
+    if (it->star) {
+        draw_icon("star", right - 18, y + (h - 18) / 2, selected ? C_WHITE : C_ACCENT);
+        right -= 30;
+    }
     if (it->value) {
         int vw = draw_text_right(FONT_REGULAR, FONT_VALUE, it->value, right, y + (h - 28) / 2, text2);
         right -= vw + 16;
@@ -314,8 +318,13 @@ static void draw_nowplaying(Page *p, int x)
         draw_text(FONT_REGULAR, FONT_NP_LINE, pl->album, tx, ty, C_TEXT2, tw);
         ty += 32;
     }
-    if (has_note)
-        draw_text(FONT_REGULAR, FONT_SMALL, p->note, tx, ty + 6, C_TEXT3, tw);
+    if (has_note) {
+        /* A favourite's star stands before the line about the song. */
+        int nx = tx + (pl->favorite ? 25 : 0);
+        if (pl->favorite)
+            draw_icon("star", tx, ty + 8, C_ACCENT);
+        draw_text(FONT_REGULAR, FONT_SMALL, p->note, nx, ty + 6, C_TEXT3, tx + tw - nx);
+    }
 
     if (words) {
         int cur = lyric_now(p, live_elapsed(pl)), next = cur + 1;
