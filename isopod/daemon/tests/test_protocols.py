@@ -239,6 +239,25 @@ class NowPlayingTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(sent), 2, "the shell's clock had run on two seconds")
 
 
+class RescanTest(unittest.IsolatedAsyncioTestCase):
+    async def test_one_scan_follows_the_last_time_mpd_came_up(self):
+        asked = []
+
+        class Mpd:
+            async def call(self, name, *args):
+                asked.append(name)
+                return []
+
+        music = Music(Mpd(), State(lambda snap: None), tempfile.mkdtemp())
+        music.RESCAN_AFTER = 0.1
+        await music._changed({"reconnect"})
+        await asyncio.sleep(0.05)
+        await music._changed({"reconnect"})
+        self.assertNotIn("update", asked, "not before MPD has been up a while")
+        await asyncio.sleep(0.2)
+        self.assertEqual(asked.count("update"), 1, "and once, though MPD came up twice")
+
+
 class CoverArtTest(unittest.IsolatedAsyncioTestCase):
     async def test_songs_sharing_a_folder_keep_their_own_album_covers(self):
         class Pictures:
@@ -267,28 +286,6 @@ class FolderListingTest(unittest.TestCase):
         dirs, files = folder_listing(d, VIDEO_EXTS)
         self.assertEqual(dirs, ["Trips"])
         self.assertEqual(files, ["Arc.webm", "The Road.mkv", "데미안.mp4"])
-
-
-class CableTest(unittest.IsolatedAsyncioTestCase):
-    async def test_the_cable_going_in_and_coming_out_is_told_once_each(self):
-        root, cable = tempfile.mkdtemp(), []
-
-        def supply(name, **values):
-            os.makedirs(os.path.join(root, name), exist_ok=True)
-            for key, value in values.items():
-                with open(os.path.join(root, name, key), "w") as f:
-                    f.write(value)
-
-        supply("axp20x-battery", type="Battery", capacity="80", status="Charging", online="1")
-        supply("axp20x-usb", type="USB", online="1")
-        battery = Battery(State(lambda snap: None), cable=cable.append, root=root)
-        battery.refresh()
-        battery.refresh()
-        self.assertEqual(cable, [True])
-        supply("axp20x-usb", online="0")
-        battery.refresh()
-        battery.refresh()
-        self.assertEqual(cable, [True, False], "the battery, always there, is not the cable")
 
 
 class BatteryWarningTest(unittest.TestCase):

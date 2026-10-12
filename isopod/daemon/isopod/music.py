@@ -53,6 +53,8 @@ class Song(dict):
 
 
 class Music:
+    RESCAN_AFTER = 10
+
     def __init__(self, mpd: MPD, state, cache_dir, music_dir="/storage/music"):
         self.mpd = mpd
         self.state = state
@@ -65,6 +67,7 @@ class Music:
         self._elapsed = (0.0, time.monotonic())
         self._no_art = set()
         self._listeners = []
+        self._rescan = None
         state.adjusters.append(self._live_elapsed)
 
     def on_library_change(self, fn):
@@ -74,6 +77,8 @@ class Music:
         spawn(self.mpd.idle_forever(self._changed))
 
     async def _changed(self, subsystems):
+        if "reconnect" in subsystems:
+            self._rescan_soon()
         if subsystems & {"reconnect", "database"}:
             await self.load_library()
         if subsystems & {"reconnect", "update"}:
@@ -93,6 +98,15 @@ class Music:
         self._by_file = {s["file"]: s for s in self.songs}
         for fn in self._listeners:
             fn()
+
+    def _rescan_soon(self):
+        """MPD scans nothing when it starts, so songs copied while isoPod was off would stay
+        unseen: one scan a little after it has come up. At boot it comes up twice, the
+        second time with the card in sight, and the scan follows the second."""
+        if self._rescan:
+            self._rescan.cancel()
+        self._rescan = asyncio.get_running_loop().call_later(
+            self.RESCAN_AFTER, lambda: spawn(self.update_library()))
 
     async def update_library(self):
         await self.mpd.call("update")
@@ -351,13 +365,3 @@ class Music:
             await self.mpd.call_list([("disableoutput", "0"), ("enableoutput", "0")])
         except MPDError:
             pass
-
-    async def wait_ready(self, timeout=10):
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            try:
-                await self.mpd.call("ping")
-                return True
-            except MPDError:
-                await asyncio.sleep(0.5)
-        return False

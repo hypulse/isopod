@@ -39,9 +39,10 @@ for KIND in music videos; do
   fi
 done
 
-# Two files a test of the Wi-Fi switch left on the one device there is, out of reach of
-# the cable. This line goes with the next change to this script.
-rm -f /storage/ask.py /storage/wifi-test.log
+# MPD is running by now and watches the folders it found when it started, which was
+# before the card was mounted. Started again it follows the card as well: a song copied
+# there, over the cable or any other way, is in the library without a scan being asked for.
+[ -d "/storage/music/SD Card/" ] && systemctl restart --no-block mpd
 
 # A Mac leaves a "._name" beside each file it copies to a card; those are not songs.
 [ -e /storage/music/.mpdignore ] || echo '._*' >/storage/music/.mpdignore

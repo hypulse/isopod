@@ -34,8 +34,9 @@ replaces the front end with a small shell built around your music.
   restart. A headset's own volume buttons count.
 - **Wi-Fi** remembers every network you join.
 - **A cable** to a computer shows the libraries as an MTP device, `Music` and `Videos`, a
-  second card being the `SD Card` folder in each. What was copied is in the library once
-  the cable is out. A Mac needs an MTP app for this, such as OpenMTP.
+  second card being the `SD Card` folder in each. What is copied is in the library as it
+  arrives, and isoPod stays awake for as long as the computer has it. A Mac needs an MTP
+  app for this, such as OpenMTP.
 - **Multitasking**: a video keeps its place. Home pauses it where it is, and the home
   screen lists it so you can pick it up again. Music and a video never sound together:
   starting one pauses the other.
