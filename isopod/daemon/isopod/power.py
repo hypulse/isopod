@@ -78,12 +78,13 @@ class Power:
     LID_SLEEP = 30
     SETTLE = 2.0
 
-    def __init__(self, state, settings, events, sim=False, remember=None):
+    def __init__(self, state, settings, events, sim=False, remember=None, busy=None):
         self.state = state
         self.settings = settings
         self.events = events
         self.sim = sim
         self.remember = remember
+        self.busy = busy or (lambda: False)
         self._remembering = None
         self.backlight = Backlight()
         self.power_key_lock = Inhibitor("handle-power-key", "isoPod handles the power button")
@@ -163,7 +164,7 @@ class Power:
         self.lid_closed = closed
         if closed:
             await self.set_screen(False)
-            if not (self.playing() and self.settings["lid_keep_playing"]):
+            if not (self.playing() and self.settings["lid_keep_playing"]) and not self.busy():
                 await self.sleep()
         else:
             await self.set_screen(True)
@@ -228,7 +229,11 @@ class Power:
             if screen is not None and now >= screen:
                 await self.set_screen(False)
             elif sleep is not None and now >= sleep:
-                await self.sleep()
+                if self.busy():
+                    # A computer is copying over the cable: stay up, and look again later.
+                    self.stopped_at = now
+                else:
+                    await self.sleep()
 
     def set_sleep_timer(self, minutes):
         """Stop the music after `minutes`; if nobody is looking, sleep too. 0 cancels."""

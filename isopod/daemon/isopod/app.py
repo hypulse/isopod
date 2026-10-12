@@ -47,7 +47,7 @@ class App:
         self.audio = Audio(FakeAudio() if self.sim else Pactl(), self.state, self.settings,
                            remember=lambda level: spawn(self.system.rocknix_setting("audio.volume", level)),
                            lost=self._route_lost, first=self.system.rocknix_volume)
-        self.power = Power(self.state, self.settings, self, sim=self.sim,
+        self.power = Power(self.state, self.settings, self, sim=self.sim, busy=self.system.computer_connected,
                            remember=lambda percent: spawn(self.system.rocknix_setting("display.brightness", percent)))
         # What a computer copied over the cable is in the library once the cable is out.
         self.battery = Battery(self.state, notify=self._battery_low, sim=self.sim,

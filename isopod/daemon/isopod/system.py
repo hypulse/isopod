@@ -31,6 +31,18 @@ class System:
         _, out, _ = await run("sh", "-c", f'. {FUNCTIONS}; get_setting "$0"', key)
         return out.strip()
 
+    def computer_connected(self):
+        """A computer has the USB port in use, as it has while it reads or copies files."""
+        udc = os.path.join(self.sysfs, "class/udc")
+        try:
+            for name in os.listdir(udc):
+                with open(os.path.join(udc, name, "state")) as f:
+                    if f.read().strip() == "configured":
+                        return True
+        except OSError:
+            pass
+        return False
+
     async def bluetooth_wanted(self):
         """Whether Bluetooth was on when the device last went down."""
         return await self._rocknix_get("controllers.bluetooth.enabled") == "1"

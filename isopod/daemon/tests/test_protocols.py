@@ -356,6 +356,24 @@ class PowerLidTest(unittest.IsolatedAsyncioTestCase):
         await self.press()
         self.assertTrue(self.power.screen_on, "a press right after opening the lid must not darken it")
 
+    async def test_a_computer_on_the_cable_keeps_it_awake_with_the_lid_shut(self):
+        self.power.busy = lambda: True
+        await self.power.lid(True)
+        self.assertEqual((self.power.screen_on, self.events.slept), (False, 0))
+        self.power.busy = lambda: False
+        await self.power.lid(False)
+        await self.power.lid(True)
+        self.assertEqual(self.events.slept, 1, "and no longer once the computer has let go")
+
+    async def test_a_computer_has_the_port_when_it_is_configured(self):
+        root = tempfile.mkdtemp()
+        os.makedirs(os.path.join(root, "class/udc/musb-hdrc.5.auto"))
+        for state, connected in (("not attached", False), ("configured", True), ("suspended", False)):
+            with open(os.path.join(root, "class/udc/musb-hdrc.5.auto/state"), "w") as f:
+                f.write(state + "\n")
+            self.assertEqual(System(sysfs=root).computer_connected(), connected, state)
+        self.assertFalse(System(sysfs=tempfile.mkdtemp()).computer_connected(), "no port at all")
+
     async def test_music_keeps_playing_with_lid_shut(self):
         self.state.update("player", state="play")
         await self.power.lid(True)
