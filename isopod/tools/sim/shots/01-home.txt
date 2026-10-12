@@ -6,16 +6,18 @@ shot 02-radio.png
 key down
 shot 03-videos.png
 key down
-shot 04-settings.png
+shot 04-books.png
 key down
-shot 05-shuffle.png
+shot 05-settings.png
+key down
+shot 06-shuffle.png
 key confirm
 wait 1500
 key home
 wait 500
 hold up 8
-hold down 5
-shot 06-now-playing.png
+hold down 6
+shot 07-now-playing.png
 open /videos
 key down
 key confirm
@@ -23,9 +25,9 @@ wait 1500
 daemon home
 wait 900
 hold up 8
-shot 07-open-apps.png
+shot 08-open-apps.png
 key up
-shot 08-open-app-selected.png
+shot 09-open-app-selected.png
 key more
-shot 09-open-app-sheet.png
+shot 10-open-app-sheet.png
 key back

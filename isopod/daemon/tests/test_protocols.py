@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -17,7 +18,7 @@ from isopod.bluetooth import A2DP_SINK, Backend, Bluetooth, Device, RavelBackend
 from isopod.mpd import MPD, MPDError, filter_expr, quote, records, values  # noqa: E402
 from isopod.music import Music  # noqa: E402
 from isopod.pages import VIDEO_EXTS, Pages, folder_listing  # noqa: E402
-from isopod.apps import AppSpec, Apps  # noqa: E402
+from isopod.apps import AppSpec, Apps, prepare_koreader  # noqa: E402
 from isopod.i18n import Translator  # noqa: E402
 from isopod.lyrics import decode, parse_lrc  # noqa: E402
 from isopod.main import parse_args  # noqa: E402
@@ -1205,6 +1206,92 @@ class VideoTest(unittest.IsolatedAsyncioTestCase):
         await self.mpv.pause(False)
         self.assertEqual(self.app.screen_timeout(60), 0)
         task.cancel()
+
+
+class BooksTest(unittest.IsolatedAsyncioTestCase):
+    """A book is picked in isoPod's list and read in KOReader, which gets its buttons from isoPod."""
+
+    SYSTEM = os.path.join(os.path.dirname(__file__), "..", "..", "system")
+
+    async def asyncSetUp(self):
+        d = tempfile.mkdtemp()
+        self.books = os.path.join(d, "books")
+        for folder in ("Classics", "데미안.sdr"):
+            os.makedirs(os.path.join(self.books, folder))
+        for name in ("데미안.epub", "notes.xyz", "A Tale.fb2.zip", "Classics/Emma.epub"):
+            open(os.path.join(self.books, name), "w").close()
+        self.app = App(parse_args(["--sim", "--socket", os.path.join(d, "s"), "--config", d, "--cache", d,
+                                   "--data", d, "--books", self.books, "--mpd", os.path.join(d, "mpd")]))
+        self.toggled = 0
+
+        async def toggle():
+            self.toggled += 1
+        self.app.music.toggle = toggle
+
+    async def test_the_list_is_books_and_folders_without_koreaders_notes(self):
+        page = await self.app.pages.build("/books")
+        self.assertEqual([(i["key"], i["title"]) for i in page["items"]],
+                         [("d:Classics", "Classics"), ("f:A Tale.fb2.zip", "A Tale"), ("f:데미안.epub", "데미안")])
+        inside = await self.app.pages.build("/books/Classics")
+        self.assertEqual((inside["title"], [i["key"] for i in inside["items"]]), ("Classics", ["f:Emma.epub"]))
+
+    async def test_a_book_opens_in_koreader_and_the_one_open_is_picked_up_again(self):
+        apps = self.app.apps
+        await self.app.pages.activate("/books", "f:데미안.epub")
+        first = apps.running["koreader"]
+        self.assertEqual((apps.front, first["title"], first["args"]),
+                         ("koreader", "데미안", [os.path.join(self.books, "데미안.epub")]))
+        await apps.home()
+        home = await self.app.pages.build("/")
+        self.assertEqual([(i["title"], i["preview"]) for i in home["items"] if i.get("key") == "app:koreader"],
+                         [("데미안", "book")])
+        await self.app.pages.activate("/books", "f:데미안.epub")
+        self.assertIs(apps.running["koreader"], first)
+        self.assertEqual(apps.front, "koreader")
+        await apps.home()
+        await self.app.pages.activate("/books/Classics", "f:Emma.epub")
+        self.assertEqual(apps.running["koreader"]["args"], [os.path.join(self.books, "Classics", "Emma.epub")])
+
+    async def test_start_is_the_music_behind_a_book_and_the_rest_is_koreaders(self):
+        await self.app.pages.activate("/books", "f:데미안.epub")
+        before = self.app.state.get("volume")["level"]
+        for name in ("up", "down", "confirm", "pageup", "pagedown"):
+            await self.app.key(name)
+        self.assertEqual((self.toggled, self.app.state.get("volume")["level"]), (0, before))
+        await self.app.key("play")
+        self.assertEqual(self.toggled, 1)
+
+    def test_koreader_gets_its_buttons_and_menu_at_every_start_and_its_settings_once(self):
+        home = os.path.join(tempfile.mkdtemp(), "koreader")
+        prepare_koreader(self.SYSTEM, "/storage/books", home)
+        settings = os.path.join(home, "settings.reader.lua")
+        ours = [os.path.join(home, "patches", "2-isopod-keys.lua"),
+                os.path.join(home, "settings", "reader_menu_order.lua")]
+        with open(settings) as f:
+            first = f.read()
+        for line in ('["home_dir"] = "/storage/books"', '["end_document_action"] = "nothing"',
+                     '["newsdownloader"] = true', '["hotkeys"] = true'):
+            self.assertIn(line, first)
+        self.assertNotIn('["statistics"]', first, "a book's status page counts the reading")
+        for path in [settings] + ours:
+            with open(path, "w") as f:
+                f.write("-- changed")
+        prepare_koreader(self.SYSTEM, "/storage/books", home)
+        with open(settings) as f:
+            self.assertEqual(f.read(), "-- changed", "KOReader's own from then on")
+        for path in ours:
+            with open(path) as f:
+                self.assertNotEqual(f.read(), "-- changed")
+
+    def test_the_shoulders_select_start_and_home_are_no_buttons_of_koreaders(self):
+        with open(os.path.join(self.SYSTEM, "koreader", "patches", "2-isopod-keys.lua")) as f:
+            patch = f.read()
+        table = patch.split("Gamepad.button_key_names = {")[1].split("}")[0]
+        keys = {int(n): name for n, name in re.findall(r'\[(\d+)\] = "(\w+)"', table)}
+        # SDL: 0 south (B), 1 east (A), 2 X, 3 Y, 4 Select, 5 Home, 6 Start, 9 L1, 10 R1, 11-14 the D-pad
+        self.assertEqual(keys, {0: "Back", 1: "Press", 2: "Menu", 3: "AA",
+                                11: "Up", 12: "Down", 13: "Left", 14: "Right"})
+        self.assertIn("Gamepad.axis_key_names = {}", patch, "L2 and R2 are axes to SDL")
 
 
 class Late(FakeAudio):

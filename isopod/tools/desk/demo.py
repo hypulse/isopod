@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""Drive a recording of isoPod with a real app, mpv. Buttons go to isopodd the way the
-gamepad's would. Captions are burnt into a strip under the screen at the end.
+"""Drive a recording of isoPod with real apps, mpv and KOReader. Buttons go to isopodd the
+way the gamepad's would; KOReader, which reads the gamepad itself, gets the keys its
+buttons stand for through the compositor. Captions are burnt into a strip under the
+screen at the end.
 
 usage: demo.py WORK_DIR OUT_DIR   (run by run.sh inside isopod-desk)
 """
@@ -55,6 +57,12 @@ def keys(name, count, wait=0.6):
     time.sleep(wait)
 
 
+def app_key(name, wait=1.0):
+    # each wtype is a new virtual keyboard; SDL drops keys that beat its keymap
+    subprocess.run(["wtype", "-s", "300", "-k", name], check=False)
+    time.sleep(wait)
+
+
 def video(index, watch, down=0):
     """Home, `down` steps to Videos (the home menu stays where it was left), then its
     index-th file."""
@@ -94,6 +102,22 @@ def storyboard():
     video(2, 7)
     caption("WebM")
     video(0, 4.5)
+
+    caption("책 · books 폴더의 책은 KOReader로 읽어요")
+    key("home", 1.0)
+    keys("down", 1, 0.4)
+    key("confirm", 1.5)
+    key("confirm", 9)
+    caption("←/→ 또는 A · 쪽 넘기기")
+    app_key("Right", 1.5)
+    app_key("Return", 2.5)
+    caption("Y · 글자 크기와 줄 간격, X · KOReader 메뉴")
+    app_key("Alt_R", 3)
+    app_key("Escape", 1)
+    app_key("F1", 3)
+    app_key("Escape", 1.5)
+    caption("B · 읽던 쪽을 기억하고 닫혀요")
+    app_key("Escape", 3)
 
     caption("isoPod")
     key("home", 3.5)

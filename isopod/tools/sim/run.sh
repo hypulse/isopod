@@ -34,7 +34,7 @@ mpd "$WORK/mpd.conf"
 pkill -f "isopodd --sim" 2>/dev/null || true
 export PATH="$ROOT/shell:$PATH"  # isopod-thumb, which isopodd runs on station logos
 python3 "$ROOT/daemon/isopodd" --sim --socket "$WORK/isopodd.sock" --config "$WORK/config" \
-    --cache "$WORK/cache" --music "$WORK/music" --videos "$WORK/videos" --data "$WORK/share" \
+    --cache "$WORK/cache" --music "$WORK/music" --videos "$WORK/videos" --books "$WORK/books" --data "$WORK/share" \
     --mpd "$WORK/mpd.sock" >"$WORK/isopodd.log" 2>&1 &
 DAEMON=$!
 

@@ -12,7 +12,9 @@ key down
 wait 1200
 key down
 wait 1200
-hold up 3
+key down
+wait 1200
+hold up 4
 wait 1500
 
 caption 음악 › 커버 플로우 · 앨범 커버를 넘겨 보세요
@@ -81,7 +83,7 @@ key control
 wait 1000
 
 caption 설정 › 블루투스 · 헤드폰은 한 번 눌러 연결
-hold down 3
+hold down 4
 wait 600
 key confirm
 wait 900
@@ -127,7 +129,7 @@ wait 800
 caption 음악 검색 · 두벌식 한글 자판, 초성만으로도 찾아요
 daemon home
 wait 800
-hold up 3
+hold up 4
 key confirm
 wait 900
 hold down 7
@@ -173,9 +175,19 @@ key confirm
 wait 2000
 shot d15-closed.png
 
-caption 설정 › 최대 음량 · 헤드폰 볼륨의 상한
+caption 책 · books 폴더의 책은 KOReader로 읽어요
 hold up 12
 hold down 3
+wait 500
+key confirm
+wait 2500
+shot d16-books.png
+key back
+wait 800
+
+caption 설정 › 최대 음량 · 헤드폰 볼륨의 상한
+hold up 12
+hold down 4
 wait 500
 key confirm
 wait 900

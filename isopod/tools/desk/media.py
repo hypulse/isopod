@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Sample videos in several containers with Korean subtitles for the desktop recording."""
+"""Sample videos in several containers with Korean subtitles, and a book, for the desktop
+recording."""
+import html
 import os
 import subprocess
 import sys
+import zipfile
 
 FONT = "/usr/share/fonts/pretendard/Pretendard-Bold.otf"
 
@@ -48,7 +51,48 @@ def video(path, label, colors, vcodec, acodec, extra=()):
                    check=True)
 
 
-def main(folder):
+PAGE = ("쥐며느리는 건드리면 몸을 동그랗게 만다. 접으면 작아지고 펴면 다시 걷는다. "
+        "주머니 속 기계도 그렇게 접혔다 펴진다. ")
+
+
+def epub(path, title, chapters):
+    """A small EPUB 3: chapters are (title, body as XHTML)."""
+    def page(name, body):
+        return ('<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html>\n'
+                '<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ko" lang="ko">'
+                f"<head><title>{html.escape(name)}</title></head><body>{body}</body></html>")
+    items = "".join(f'<item id="c{i}" href="c{i}.xhtml" media-type="application/xhtml+xml"/>'
+                    for i in range(len(chapters)))
+    spine = "".join(f'<itemref idref="c{i}"/>' for i in range(len(chapters)))
+    toc = "".join(f'<li><a href="c{i}.xhtml">{html.escape(name)}</a></li>' for i, (name, _) in enumerate(chapters))
+    files = {
+        "META-INF/container.xml":
+            '<?xml version="1.0"?>\n<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+            '<rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles>'
+            "</container>",
+        "content.opf":
+            '<?xml version="1.0" encoding="utf-8"?>\n<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
+            'unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+            f'<dc:identifier id="id">urn:isopod:{html.escape(title)}</dc:identifier>'
+            f"<dc:title>{html.escape(title)}</dc:title><dc:creator>isoPod</dc:creator><dc:language>ko</dc:language>"
+            '<meta property="dcterms:modified">2000-01-01T00:00:00Z</meta></metadata><manifest>'
+            f'<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>{items}'
+            f"</manifest><spine>{spine}</spine></package>",
+        "nav.xhtml": page(title, '<nav xmlns:epub="http://www.idpf.org/2007/ops" epub:type="toc">'
+                                 f"<ol>{toc}</ol></nav>"),
+    }
+    files.update({f"c{i}.xhtml": page(name, body) for i, (name, body) in enumerate(chapters)})
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(zipfile.ZipInfo("mimetype"), "application/epub+zip")
+        for name, text in files.items():
+            z.writestr(name, text)
+
+
+def main(folder, books=None):
+    if books:
+        os.makedirs(books, exist_ok=True)
+        epub(os.path.join(books, "쥐며느리 이야기.epub"), "쥐며느리 이야기",
+             [(f"{n}장", f"<h2>{n}장</h2>" + f"<p>{PAGE * 4}</p>" * 14) for n in range(1, 7)])
     os.makedirs(folder, exist_ok=True)
     video(os.path.join(folder, "밤의 도시.mp4"), "MP4 - H.264 / AAC", ("0x1e3c72", "0x2a5298"), "libx264", "aac")
     with open(os.path.join(folder, "밤의 도시.smi"), "w", encoding="cp949") as f:
@@ -69,4 +113,4 @@ def main(folder):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(*sys.argv[1:3])

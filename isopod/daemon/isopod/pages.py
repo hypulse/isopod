@@ -13,6 +13,8 @@ log = logging.getLogger("isopod.pages")
 
 VIDEO_EXTS = (".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v", ".ts", ".m2ts", ".mts", ".mpg", ".mpeg", ".wmv",
               ".asf", ".flv", ".f4v", ".3gp", ".ogv", ".vob", ".divx", ".rm", ".rmvb")
+BOOK_EXTS = (".epub", ".pdf", ".mobi", ".azw3", ".azw", ".fb2", ".fb2.zip", ".cbz", ".cbr", ".djvu",
+             ".txt", ".md", ".rtf", ".docx", ".odt", ".html", ".htm", ".chm", ".xps")
 TIMEOUTS = (15, 30, 60, 120, 300, 0)
 LIMITS = (100, 90, 80, 70, 60, 50)
 
@@ -145,6 +147,7 @@ class Pages:
             item("music", t("music"), preview="art"),
             item("radio", t("radio"), preview="radio"),
             item("videos", t("videos"), preview="video"),
+            item("books", t("books"), preview="book"),
             item("settings", t("settings"), preview="settings"),
             item("shuffle", t("shuffle_songs"), "none", preview="art"),
         ]
@@ -154,7 +157,8 @@ class Pages:
         apps = self.app.state.get("apps")
         if apps:
             items.append(header(t("open_apps")))
-            items += [item(f"app:{a['key']}", a["title"], "none", preview="video") for a in apps]
+            items += [item(f"app:{a['key']}", a["title"], "none",
+                           preview="book" if a["key"] == "koreader" else "video") for a in apps]
         return page("/", "isoPod", items, live=True, layout="split", art=self._art_pool(path))
 
     async def _do_root(self, path, rest, key):
@@ -603,7 +607,7 @@ class Pages:
         return {"sheet": {"title": station["name"], "token": self._token(choose),
                           "items": [self._favorite_row(self.app.radio.is_favorite(station["uuid"]))]}}
 
-    # videos ----------------------------------------------------------------
+    # videos, books ---------------------------------------------------------
 
     def _media_dir(self, kind, rest):
         root = os.path.normpath(self.app.paths[kind])
@@ -623,6 +627,25 @@ class Pages:
         if key.startswith("f:"):
             file = os.path.join(self._media_dir("videos", rest), key[2:])
             await self.app.launch(self.app.catalog["video"], _strip_ext(key[2:], VIDEO_EXTS), [file])
+
+    async def _page_books(self, path, rest):
+        dirs, files = folder_listing(self._media_dir("books", rest), BOOK_EXTS)
+        # A library brought from another KOReader has a folder of notes beside each book.
+        items = [item("d:" + d, d) for d in dirs if not d.endswith(".sdr")]
+        items += [item("f:" + f, _strip_ext(f, BOOK_EXTS), "none") for f in files]
+        return page(path, rest[-1] if rest else self.t("books"), items,
+                    empty=empty("book", self.t("no_books_title"), self.t("no_books_text")))
+
+    async def _do_books(self, path, rest, key):
+        if key.startswith("d:"):
+            return {"push": path.rstrip("/") + "/" + enc(key[2:])}
+        if key.startswith("f:"):
+            file = os.path.join(self._media_dir("books", rest), key[2:])
+            if self.app.apps.opened_file("koreader") == file:
+                await self.app.resume_app("koreader")
+            else:
+                # The book that was open keeps its page as KOReader closes.
+                await self.app.launch(self.app.catalog["koreader"], _strip_ext(key[2:], BOOK_EXTS), [file])
 
     # settings ----------------------------------------------------------------
 

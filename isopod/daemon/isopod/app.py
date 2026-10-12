@@ -32,7 +32,8 @@ class App:
     def __init__(self, args):
         self.sim = args.sim
         self.paths = {"socket": args.socket, "config": args.config, "cache": args.cache,
-                      "music": args.music, "videos": args.videos, "data": args.data}
+                      "music": args.music, "videos": args.videos, "books": args.books,
+                      "data": args.data}
         self.settings = Settings(args.config)
         self.t = Translator(self.settings["lang"])
         self.state = State(self._state_changed)
@@ -59,7 +60,8 @@ class App:
         runner = getattr(args, "apps", None) or ("sim" if self.sim else "systemd")
         self.apps = Apps(self.state, self, {k: v for k, v in os.environ.items() if k in APP_ENV_KEYS},
                          runner=runner)
-        self.catalog = catalog(args.data, sim=runner == "sim", run_dir=os.path.dirname(args.socket))
+        self.catalog = catalog(args.data, args.books, lambda: self.t.lang, sim=runner == "sim",
+                               run_dir=os.path.dirname(args.socket))
         self.pages = Pages(self)
         self.music.step_station = self.pages.step_station
         self.input = None if self.sim else Input(self)
@@ -208,10 +210,14 @@ class App:
             self.server.broadcast({"event": "key", "key": "home"})
             return
         if self.apps.front:
-            # A video has the gamepad to itself, but up and down are the volume there as
-            # they are in Now Playing, and the volume is isoPod's.
-            if name in ("up", "down") and self.apps.front_plays_media:
-                await self.volume(1 if name == "up" else -1)
+            if self.apps.front_plays_media:
+                # A video has the gamepad to itself, but up and down are the volume there as
+                # they are in Now Playing, and the volume is isoPod's.
+                if name in ("up", "down"):
+                    await self.volume(1 if name == "up" else -1)
+            elif name == "play":
+                # A book is read to music, and Start plays or pauses it as it does in the shell.
+                await self.music.toggle()
             return
         self.server.broadcast({"event": "key", "key": name, "repeat": repeat})
 

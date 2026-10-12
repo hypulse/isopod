@@ -13,7 +13,7 @@ for TOUR in ${@:-$HERE/shots/*.txt}; do
     if [ "$NAME" = 08-empty ]; then
         # A library with nothing in it: run.sh fills only a missing one.
         DIR=$WORK-empty
-        mkdir -p "$DIR/music" "$DIR/videos" "$DIR/playlists"
+        mkdir -p "$DIR/music" "$DIR/videos" "$DIR/books" "$DIR/playlists"
     fi
     rm -rf "$DIR/config" "$DIR/cache" "$DIR/mpd.state" "$DIR/playlists/Favorites.m3u" "$OUT/$NAME"
     ISOPOD_SIM_DIR=$DIR "$HERE/run.sh" "$TOUR" "$OUT/$NAME"

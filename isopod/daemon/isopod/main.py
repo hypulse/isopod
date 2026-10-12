@@ -15,6 +15,7 @@ def parse_args(argv=None):
     p.add_argument("--cache", default="/storage/.cache/isopod")
     p.add_argument("--music", default="/storage/music")
     p.add_argument("--videos", default="/storage/videos")
+    p.add_argument("--books", default="/storage/books")
     p.add_argument("--data", default="/usr/share/isopod")
     p.add_argument("--mpd", default=os.environ.get("MPD_HOST", "/run/mpd/socket"))
     p.add_argument("--mpd-port", type=int, default=6600)

@@ -523,7 +523,7 @@ typedef struct {
 
 static const Tone TONES[] = {
     {"music", RGB(255, 94, 108), RGB(214, 36, 82)},      {"video", RGB(72, 170, 255), RGB(28, 98, 226)},
-    {"radio", RGB(186, 104, 255), RGB(112, 64, 232)},
+    {"radio", RGB(186, 104, 255), RGB(112, 64, 232)},    {"book", RGB(255, 176, 64), RGB(240, 112, 36)},
     {"settings", RGB(156, 162, 176), RGB(96, 102, 116)}, {"playlist", RGB(255, 122, 172), RGB(226, 60, 124)},
     {"genre", RGB(90, 206, 226), RGB(34, 140, 184)},     {"search", RGB(126, 136, 158), RGB(70, 80, 104)},
 };

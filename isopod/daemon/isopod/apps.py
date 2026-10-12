@@ -80,14 +80,15 @@ class AppSpec:
     plays, playing), N stretches the timeout to at least N seconds, None leaves it to the
     setting."""
 
-    def __init__(self, key, title_key, argv, needs=None, pauses_music=False, env=None, awake=None,
-                 control=None):
+    def __init__(self, key, title_key, argv, needs=None, pauses_music=False, env=None, setup=None,
+                 awake=None, control=None):
         self.key = key
         self.title_key = title_key
         self.argv = argv
         self.needs = needs
         self.pauses_music = pauses_music
         self.env = env or {}
+        self.setup = setup  # run before each start; what it returns joins the environment
         self.awake = awake
         self.control = control  # mpv's JSON IPC socket, to pause it when headphones go
 
@@ -95,8 +96,63 @@ class AppSpec:
         return self.needs is None or _first_existing(*self.needs) is not None
 
 
-def catalog(data_dir, sim=False, run_dir="/run/isopod"):
+KOREADER_HOME = "/storage/.config/koreader"
+# Every plugin KOReader 2026.07.1 ships but its reading statistics, which a book's status
+# page shows: news, sync, cloud storage and the like, and the cover browser, which greets
+# a first start with a notice.
+KOREADER_PLUGINS = (
+    "archiveviewer", "autodim", "autostandby", "autosuspend", "autoturn", "autowarmth", "batterystat",
+    "bookshortcuts", "calibre", "cloudstorage", "coverbrowser", "coverimage", "docsettingtweak", "exporter",
+    "externalkeyboard", "gestures", "hello", "hotkeys", "httpinspector", "japanese", "keepalive", "kosync",
+    "movetoarchive", "newsdownloader", "opds", "perceptionexpander", "profiles", "qrclipboard", "readtimer",
+    "systemstat", "terminal", "texteditor", "vocabbuilder", "wallabag")
+KOREADER_DEFAULTS = """-- Written once by isoPod; KOReader owns this file from now on.
+return {
+    ["back_in_reader"] = "default",
+    ["back_to_exit"] = "always",
+    ["color_rendering"] = true,
+    ["document_metadata_folder"] = "dir",
+    ["end_document_action"] = "nothing",
+    ["home_dir"] = "%(books)s",
+    ["lastdir"] = "%(books)s",
+    ["plugins_disabled"] = {
+%(plugins)s    },
+    ["quickstart_shown_version"] = 202607010000,
+    ["start_with"] = "last",
+}
+"""
+
+
+def prepare_koreader(data_dir, books_dir, home=KOREADER_HOME):
+    """isoPod's buttons and menu, at every start, and KOReader's first settings, once: B
+    leaves a book at once, a book's page is kept here and not in a folder beside the book,
+    and nothing pops up at the first start or at a book's end."""
+    try:
+        for part in ("patches", "settings"):
+            os.makedirs(os.path.join(home, part), exist_ok=True)
+            src = os.path.join(data_dir, "koreader", part)
+            for name in os.listdir(src):
+                shutil.copyfile(os.path.join(src, name), os.path.join(home, part, name))
+        settings = os.path.join(home, "settings.reader.lua")
+        if not os.path.exists(settings):
+            plugins = "".join(f'        ["{name}"] = true,\n' for name in KOREADER_PLUGINS)
+            with open(settings, "w") as f:
+                f.write(KOREADER_DEFAULTS % {"books": books_dir, "plugins": plugins})
+    except OSError as e:
+        log.warning("could not prepare KOReader: %s", e)
+
+
+def catalog(data_dir, books_dir, lang, sim=False, run_dir="/run/isopod"):
+    def reader():
+        prepare_koreader(data_dir, books_dir)
+        # KOReader speaks isoPod's language until it is given one of its own.
+        return {"LANGUAGE": "ko_KR" if lang() == "ko" else "en"}
+
     specs = {
+        # DISABLE_TOUCH: there is no touch screen, so KOReader is worked by its keys alone.
+        "koreader": AppSpec("koreader", "books", ["koreader"], needs=["koreader"],
+                            env={"KO_HOME": KOREADER_HOME, "SDL_FULLSCREEN": "1", "DISABLE_TOUCH": "1"},
+                            setup=reader, awake=600),
         "video": AppSpec("video", "videos", ["mpv", f"--config-dir={data_dir}/mpv",
                                              f"--input-ipc-server={run_dir}/mpv.sock"],
                          needs=["mpv"], pauses_music=True, awake=0, control=f"{run_dir}/mpv.sock"),
@@ -148,6 +204,10 @@ class Apps:
     def is_media(self, key):
         app = self.running.get(key)
         return bool(app and app["media"])
+
+    def opened_file(self, key):
+        app = self.running.get(key)
+        return app["args"][0] if app and app["args"] else None
 
     def front_awake(self):
         """A video holds the screen while it plays; paused, it lets the screen go like a list."""
@@ -271,6 +331,8 @@ class Apps:
             argv.insert(1, f"--wayland-app-id={app_id}")
         env = {**self.env, **spec.env, "SDL_VIDEO_WAYLAND_WMCLASS": app_id, "SDL_VIDEO_X11_WMCLASS": app_id,
                "SDL_APP_ID": app_id}
+        if spec.setup and not self.sim:
+            env.update(spec.setup() or {})
         app = {"title": title, "unit": unit, "workspace": workspace, "frozen": False, "app_id": app_id,
                "media": spec.pauses_music, "args": list(extra_args), "awake": spec.awake,
                "control": spec.control, "playing": True, "used_at": time.monotonic()}

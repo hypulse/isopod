@@ -185,6 +185,11 @@ def main(root):
     os.makedirs(os.path.join(videos, "Concerts"), exist_ok=True)
     for name in ("Big Buck Bunny.mp4", "Sintel.mkv", "Tears of Steel.mp4", "Concerts/Live at Han River.mp4"):
         open(os.path.join(videos, name), "a").close()
+    books = os.path.join(root, "books")
+    os.makedirs(os.path.join(books, "Classics"), exist_ok=True)
+    for name in ("데미안.epub", "The Little Prince.pdf", "어린 왕자.epub", "Field Notes.cbz",
+                 "Classics/Pride and Prejudice.epub", "Classics/Moby-Dick.fb2.zip"):
+        open(os.path.join(books, name), "a").close()
 
 
 if __name__ == "__main__":

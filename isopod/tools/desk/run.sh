@@ -1,5 +1,5 @@
 #!/bin/sh
-# Record isoPod with a real app (mpv) under a headless sway, inside isopod-desk.
+# Record isoPod with real apps (mpv, KOReader) under a headless sway, inside isopod-desk.
 # usage: run.sh OUT_DIR
 set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -14,14 +14,15 @@ mkdir -p "$W/share" "$W/config" "$W/cache" "$OUT" /storage/.config /storage/.cac
 ln -sfn /usr/share/fonts/pretendard "$W/share/fonts"
 ln -sfn "$ROOT/shell/assets/icons" "$W/share/icons"
 ln -sfn "$ROOT/system/mpv" "$W/share/mpv"
+ln -sfn "$ROOT/system/koreader" "$W/share/koreader"
 for f in "$ROOT"/shell/assets/*.png; do ln -sf "$f" "$W/share/"; done
 ln -sfn "$W/share" /usr/share/isopod
 
 [ -d "$W/music" ] || python3 "$ROOT/tools/gen_test_music.py" "$W" >/dev/null
 # real media only: the simulator's empty stand-ins would open as broken files here
-find "$W/videos" -type f -size 0 -delete 2>/dev/null || true
-rm -rf "$W/videos/Concerts"
-[ -f "$W/videos/Loop.webm" ] || python3 "$ROOT/tools/desk/media.py" "$W/videos"
+find "$W/videos" "$W/books" -type f -size 0 -delete 2>/dev/null || true
+rm -rf "$W/videos/Concerts" "$W/books/Classics"
+[ -f "$W/videos/Loop.webm" ] || python3 "$ROOT/tools/desk/media.py" "$W/videos" "$W/books"
 cat >"$W/sway.conf" <<CONF
 output HEADLESS-1 resolution 640x480 position 0 0
 default_border none
@@ -47,8 +48,8 @@ CONF
 mpd "$W/mpd.conf" 2>/dev/null
 
 PATH="$ROOT/shell:$PATH" python3 "$ROOT/daemon/isopodd" --sim --apps direct --socket "$W/isopodd.sock" --config "$W/config" \
-    --cache "$W/cache" --music "$W/music" --videos "$W/videos" --data "$W/share" --mpd "$W/mpd.sock" \
-    >"$W/isopodd.log" 2>&1 &
+    --cache "$W/cache" --music "$W/music" --videos "$W/videos" --books "$W/books" --data "$W/share" \
+    --mpd "$W/mpd.sock" >"$W/isopodd.log" 2>&1 &
 make -s -C "$ROOT/shell"
 sleep 1
 SDL_VIDEODRIVER=wayland "$ROOT/shell/isopod-shell" --data "$W/share" --socket "$W/isopodd.sock" >"$W/shell.log" 2>&1 &

@@ -32,6 +32,10 @@ replaces the front end with a small shell built around your music.
 - **Videos** from `/storage/videos`, played by mpv: MP4, MKV, AVI, WebM, MOV and the rest.
   Subtitles beside the file (SRT, SMI, ASS, VTT) or inside it turn on by themselves, Korean
   first, and older Korean subtitle files read correctly. It remembers where you stopped.
+- **Books** from `/storage/books`, read in [KOReader](https://koreader.rocks): EPUB, PDF,
+  comics and the rest it opens. isoPod lists them, KOReader shows the one you pick with
+  isoPod's buttons and a menu cut down to reading, and a book opens again at the page it
+  was left on.
 - **Bluetooth** headphones connect from one list in Settings, and Bluetooth left on is on
   again after a restart.
 - **Headphones**, wired or Bluetooth, take the sound when they arrive; with both, the one
@@ -41,12 +45,12 @@ replaces the front end with a small shell built around your music.
   Bluetooth headset, never above the limit, and each comes back where it was left after a
   restart. A headset's own volume buttons count.
 - **Wi-Fi** remembers every network you join.
-- **A cable** to a computer shows the libraries as an MTP device, `Music` and `Videos`, a
-  second card being the `SD Card` folder in each. What is copied is in the library as it
-  arrives, and isoPod stays awake for as long as the computer has it. A Mac needs an MTP
-  app for this, such as OpenMTP.
-- **Multitasking**: a video keeps its place. Home pauses it where it is, and the home
-  screen lists it so you can pick it up again. Music and a video never sound together:
+- **A cable** to a computer shows the libraries as an MTP device, `Music`, `Videos` and
+  `Books`, a second card being the `SD Card` folder in each. What is copied is in the
+  library as it arrives, and isoPod stays awake for as long as the computer has it. A Mac
+  needs an MTP app for this, such as OpenMTP.
+- **Multitasking**: a video or a book keeps its place. Home pauses it where it is, and the
+  home screen lists it so you can pick it up again. Music and a video never sound together:
   starting one pauses the other.
 - **Lid and power**: closing the lid turns the screen off and keeps the music playing,
   and the app in front pauses until the lid opens. With nothing playing the device
@@ -98,6 +102,11 @@ audio track, Y the subtitles (as Y is the lyrics of a song), and Select shows wh
 film is. A headset's buttons act on the video while it is in front and on the music
 otherwise, and a paused video lets the screen go dark like any list.
 
+In a book ←, → and A turn the page, as ↑ and ↓ do; B leaves, and the page is remembered.
+X opens KOReader's menu (contents and bookmarks, type, the screen, tools, the book) and Y
+the text's size and spacing, where the D-pad moves, A chooses and B goes back. Start plays
+or pauses the music behind the page. Select and the four shoulder buttons do nothing there.
+
 ## How it fits together
 
 | Part | Where | Role |
@@ -126,10 +135,10 @@ The recipes that put these in the image are in `projects/ROCKNIX/packages/isopod
 
    Without it the bootloader has nothing to start Linux with, and the device shows only its
    red light. An SP with the newer panel takes `sun50i-h700-anbernic-rg35xx-sp-v2-panel.dtb`.
-4. Add music and videos on a second microSD card (exFAT works with any computer): put
-   them in its `music` and `videos` folders, lyrics beside their songs. isoPod creates the
-   folders on first boot and shows the card as an `SD Card` folder in each library. With
-   the card in the device, a USB cable to a computer reaches the same folders.
+4. Add music, videos and books on a second microSD card (exFAT works with any computer):
+   put them in its `music`, `videos` and `books` folders, lyrics beside their songs. isoPod
+   creates the folders on first boot and shows the card as an `SD Card` folder in each
+   library. With the card in the device, a USB cable to a computer reaches the same folders.
 
 To update an installed isoPod, take the `.tar` from `isopod-H700-update` of a later run,
 copy it to the `Update` storage over the cable (or to `/storage/.update` over SSH) and
@@ -180,9 +189,9 @@ docker run --rm -v "$PWD":/src -w /src/isopod/tools isopod-dev \
     python3 -c "import gen_assets; gen_assets.splash('../shell/assets')"
 ```
 
-The desk runs the same system with a real mpv under a headless sway and records it: the
-storyboard in `isopod/tools/desk/demo.py` plays music with lyrics and videos in four
-formats with their subtitles, switching between them.
+The desk runs the same system with a real mpv and KOReader under a headless sway and
+records it: the storyboard in `isopod/tools/desk/demo.py` plays music with lyrics and
+videos in four formats with their subtitles, switching between them, and reads a book.
 
 ```sh
 docker build -t isopod-desk isopod/tools/desk
@@ -201,6 +210,6 @@ need a pass on the device.
 ## Credits
 
 isoPod is built on [ROCKNIX](https://github.com/ROCKNIX/distribution) and uses
-[MPD](https://www.musicpd.org), [mpv](https://mpv.io),
+[MPD](https://www.musicpd.org), [mpv](https://mpv.io), [KOReader](https://koreader.rocks),
 [cJSON](https://github.com/DaveGamble/cJSON) and the
 [Pretendard](https://github.com/orioncactus/pretendard) typeface.

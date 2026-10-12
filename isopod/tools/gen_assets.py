@@ -123,6 +123,11 @@ def empty_icons(P):
         poly(d, [(31, 29.5), (31, 42.5), (42.5, 36)])
     glyph("video", video)
 
+    def book(d):
+        poly(d, [(15, 24), (34, 27.5), (34, 50), (15, 46.5)])
+        poly(d, [(38, 27.5), (57, 24), (57, 46.5), (38, 50)])
+    glyph("book", book)
+
 
 
 def glyphs(P):
@@ -138,6 +143,11 @@ def glyphs(P):
         rrect(d, 18, 32, 110, 96, 14, fill=False, width=7)
         poly(d, [(54, 48), (54, 80), (84, 64)])
     glyph("video", video)
+
+    def book(d):
+        poly(d, [(20, 38), (60, 45), (60, 96), (20, 89)])
+        poly(d, [(68, 45), (108, 38), (108, 89), (68, 96)])
+    glyph("book", book)
 
     glyph("radio", lambda d: on_air(d, 64, 64, 1.0, 7))
 

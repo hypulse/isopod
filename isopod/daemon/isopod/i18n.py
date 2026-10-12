@@ -2,6 +2,7 @@ STRINGS = {
     "music": ("음악", "Music"),
     "radio": ("라디오", "Radio"),
     "videos": ("비디오", "Videos"),
+    "books": ("책", "Books"),
     "settings": ("설정", "Settings"),
     "shuffle_songs": ("노래 셔플", "Shuffle Songs"),
     "now_playing": ("지금 재생 중", "Now Playing"),
@@ -54,6 +55,8 @@ STRINGS = {
 
     "no_videos_title": ("비디오가 없어요", "No Videos"),
     "no_videos_text": ("videos 폴더에 동영상을 넣어 주세요.", "Copy movies into the videos folder."),
+    "no_books_title": ("책이 없어요", "No Books"),
+    "no_books_text": ("books 폴더에 책을 넣어 주세요.", "Copy books into the books folder."),
     "opening": ("여는 중…", "Opening…"),
     "close_app": ("닫기", "Close"),
     "app_failed": ("{name} 앱을 열 수 없어요", "Couldn’t Open {name}"),
