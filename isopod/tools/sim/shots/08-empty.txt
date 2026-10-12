@@ -1,0 +1,25 @@
+# A device with nothing on it yet.
+wait 1500
+shot 01-home.png
+open /music
+shot 02-music.png
+open /music/coverflow
+wait 600
+shot 03-cover-flow.png
+key home
+open /music/songs
+shot 04-songs.png
+open /music/playlists
+shot 05-playlists.png
+key home
+open /music/queue
+shot 06-up-next.png
+open /videos
+shot 07-videos.png
+key home
+key down
+key down
+key down
+key confirm
+wait 600
+shot 08-shuffle-with-no-songs.png

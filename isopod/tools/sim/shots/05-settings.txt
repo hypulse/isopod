@@ -1,0 +1,100 @@
+# Settings: Wi-Fi, Bluetooth, the display, the volume limit, the language and About.
+wait 1500
+open /settings
+shot 01-settings.png
+open /settings/wifi
+wait 600
+shot 02-wifi.png
+hold up 9
+hold down 2
+key confirm
+wait 500
+shot 03-wifi-password.png
+type password
+shot 04-wifi-password-typed.png
+key play
+wait 200
+shot 05-wifi-joining.png
+wait 1800
+shot 06-wifi-joined.png
+key home
+open /settings/wifi/saved
+shot 07-saved-networks.png
+hold up 9
+key down
+key more
+wait 400
+shot 08-saved-network-sheet.png
+key down
+shot 09-saved-network-forget.png
+key confirm
+wait 300
+shot 10-network-forgotten.png
+wait 2500
+key home
+open /settings/wifi
+hold up 9
+key confirm
+wait 500
+shot 11-wifi-off.png
+key confirm
+sim {"wifi": "Cafe isoPod"}
+wait 800
+key home
+open /settings/bluetooth
+wait 600
+shot 12-bluetooth.png
+hold up 9
+key down
+send {"op": "activate", "path": "/settings/bluetooth", "key": "d:/org/bluez/hci0/dev_00"}
+wait 350
+shot 13-bluetooth-connecting.png
+wait 1500
+shot 14-bluetooth-connected.png
+wait 2600
+key more
+wait 400
+shot 15-device-sheet.png
+key back
+hold up 9
+key confirm
+wait 600
+shot 16-bluetooth-off.png
+key confirm
+wait 600
+key home
+open /settings/display
+shot 17-display.png
+open /settings/display/brightness
+shot 18-brightness.png
+key left
+key left
+key left
+shot 19-brightness-lower.png
+key right
+key right
+key right
+key home
+open /settings/display/timeout
+shot 20-screen-timeout.png
+open /settings/display/lid
+shot 21-lid.png
+key home
+open /settings/limit
+shot 22-volume-limit.png
+open /settings/language
+shot 23-language.png
+open /settings/about
+shot 24-about.png
+key home
+open /settings/language
+key down
+key confirm
+wait 600
+key home
+wait 400
+shot 25-english-home.png
+open /settings
+shot 26-english-settings.png
+open /music
+shot 27-english-music.png

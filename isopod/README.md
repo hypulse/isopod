@@ -150,6 +150,14 @@ docker run --rm -v "$PWD":/src -v "$PWD/shots":/out -w /src isopod-dev \
     isopod/tools/sim/run.sh /src/isopod/tools/sim/tour.txt /out
 ```
 
+`isopod/tools/sim/shots.sh` walks through every screen instead, one tour for each part of
+the system, and files the screenshots by part with a sheet of thumbnails for each; the
+last such walk is in [`docs/ui`](docs/ui).
+
+```sh
+docker run --rm -v "$PWD":/src -w /src isopod-dev isopod/tools/sim/shots.sh /src/isopod/docs/ui
+```
+
 The desk runs the same system with a real mpv under a headless sway and records it: the
 storyboard in `isopod/tools/desk/demo.py` plays music with lyrics and videos in four
 formats with their subtitles, switching between them.

@@ -1,0 +1,69 @@
+# What comes over a screen: the Control Center, the power menu, the volume, messages,
+# the letter of a jump, and the keyboard in each of its layouts.
+wait 1500
+key control
+wait 600
+shot 01-control-center.png
+key down
+key down
+shot 02-control-center-brightness.png
+key control
+wait 400
+sim {"power": true}
+wait 1600
+shot 03-power-menu.png
+key down
+key down
+shot 04-power-menu-shut-down.png
+key back
+sim {"power": false}
+wait 400
+open /music/songs
+volume 1
+wait 150
+shot 05-volume.png
+wait 2200
+sim {"jack": true}
+wait 600
+volume -1
+wait 150
+shot 06-volume-headphones.png
+wait 2200
+sim {"jack": false}
+wait 600
+sim {"battery": 19}
+wait 400
+shot 07-message-battery-low.png
+wait 3000
+sim {"battery": 78}
+key right
+shot 08-letter.png
+wait 900
+key home
+open /music
+hold down 7
+key confirm
+wait 500
+shot 09-keyboard.png
+key more
+shot 10-keyboard-capitals.png
+key more
+key now
+shot 11-keyboard-symbols.png
+key more
+shot 12-keyboard-more-symbols.png
+key now
+hold down 3
+hold up 3
+key down
+key down
+key down
+key right
+shot 13-keyboard-bottom-row.png
+key confirm
+shot 14-keyboard-hangul.png
+key more
+shot 15-keyboard-hangul-doubles.png
+key more
+type ㅎㅏㄴㄱㅏㅇㅇㅢ ㅂㅏㅁ
+shot 16-keyboard-hangul-typed.png

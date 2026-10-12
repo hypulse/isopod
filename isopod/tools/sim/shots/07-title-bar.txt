@@ -1,0 +1,54 @@
+# The title bar: the time, what is playing, the battery, Wi-Fi and Bluetooth.
+wait 1500
+shot 01-home.png
+sim {"battery": 55, "charging": true}
+wait 300
+shot 02-charging.png
+sim {"battery": 100, "charging": true}
+wait 300
+shot 03-charged.png
+sim {"battery": 12}
+wait 300
+shot 04-battery-low.png
+wait 3000
+sim {"battery": 78}
+sim {"wifi": "Free Seoul WiFi"}
+wait 300
+shot 05-wifi-weak.png
+sim {"wifi": ""}
+wait 300
+shot 06-wifi-not-joined.png
+sim {"wifi": "Home"}
+open /settings/wifi
+wait 500
+hold up 9
+key confirm
+wait 500
+shot 07-wifi-off.png
+key confirm
+sim {"wifi": "Home"}
+wait 800
+key home
+open /settings/bluetooth
+wait 500
+hold up 9
+key confirm
+wait 600
+shot 08-bluetooth-off.png
+key confirm
+wait 600
+key down
+key confirm
+wait 2200
+shot 09-headphones.png
+wait 2500
+key home
+open /music/album/Aurora Lane/Night Drive
+key confirm
+wait 1200
+key home
+wait 400
+shot 10-playing.png
+key play
+wait 400
+shot 11-paused.png

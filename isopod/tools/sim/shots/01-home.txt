@@ -1,0 +1,29 @@
+# The home screen: what each row shows beside it, with a song playing, and with a video waiting.
+wait 1500
+shot 01-music.png
+key down
+shot 02-videos.png
+key down
+shot 03-settings.png
+key down
+shot 04-shuffle.png
+key confirm
+wait 1500
+key home
+wait 500
+hold up 8
+hold down 4
+shot 05-now-playing.png
+open /videos
+key down
+key confirm
+wait 1500
+daemon home
+wait 900
+hold up 8
+shot 06-open-apps.png
+key up
+shot 07-open-app-selected.png
+key more
+shot 08-open-app-sheet.png
+key back

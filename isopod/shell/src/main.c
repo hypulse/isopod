@@ -220,6 +220,8 @@ static void script_step(void)
     } else if (!strcmp(cmd, "daemon")) {
         daemon_key(arg);
         settle = false;
+    } else if (!strcmp(cmd, "open")) {
+        nav_push(arg, NULL);
     } else if (!strcmp(cmd, "volume")) {
         daemon_volume(atoi(arg));
         settle = false;

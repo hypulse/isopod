@@ -1,0 +1,9 @@
+# Videos: the library and a folder.
+wait 1500
+open /videos
+shot 01-videos.png
+key confirm
+shot 02-folder.png
+key back
+key down
+shot 03-video-selected.png
