@@ -271,7 +271,8 @@ static void draw_reflection(const char *path, int x, int y, int size, int depth)
 }
 
 /* Now Playing: the cover over its reflection, what the song is, and under them the line
- * being sung with the one after it. A song without timed words has a larger cover. */
+ * being sung with the one after it. A song without timed words leaves those two lines
+ * empty, so nothing moves from one song to the next. */
 static void draw_nowplaying(Page *p, int x)
 {
     Player *pl = &app.status.player;
@@ -289,8 +290,7 @@ static void draw_nowplaying(Page *p, int x)
         draw_icon("shuffle", ix - 24, CONTENT_Y + 14, C_ACCENT);
 
     bool words = p->count > 0 && p->time_count > 0;
-    const int art = words ? 232 : 272, ax = x + 36, ay = CONTENT_Y + (words ? 22 : 34);
-    const int mirror = words ? 44 : 52;
+    const int art = 232, mirror = 44, ax = x + 36, ay = CONTENT_Y + 22;
     draw_image(pl->art, "art-default", ax, ay, art, 0);
     draw_reflection(pl->art, ax, ay + art, art, mirror);
     Rgba edge = RGBA(0, 0, 0, 26);
