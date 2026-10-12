@@ -1038,14 +1038,15 @@ void render(void)
 
     Page *p = top();
     const char *title = bar_title(p);
+    /* Cover Flow has a dark bar over its dark stage, though not over "No Music". */
+    bool dark = p && p->style == STYLE_COVERFLOW && !(p->loaded && !p->count);
     if (app.transition && app.leaving) {
         float t = ease_out((SDL_GetTicks() - app.transition_at) / (float)ANIM_PUSH_MS);
         int dir = app.transition;
         int off = (int)(SCREEN_W * t);
         draw_page(app.leaving, dir > 0 ? -off : off);
         draw_page(p, dir > 0 ? SCREEN_W - off : off - SCREEN_W);
-        draw_bar(title, (Uint8)(255 * t), bar_title(app.leaving), (Uint8)(255 * (1 - t)),
-                 p && p->style == STYLE_COVERFLOW);
+        draw_bar(title, (Uint8)(255 * t), bar_title(app.leaving), (Uint8)(255 * (1 - t)), dark);
         wants_frame = true;
         if (t >= 1) {
             if (dir < 0)
@@ -1055,7 +1056,7 @@ void render(void)
         }
     } else {
         draw_page(p, 0);
-        draw_bar(title, 255, NULL, 0, p && p->style == STYLE_COVERFLOW);
+        draw_bar(title, 255, NULL, 0, dark);
     }
     if (app.overlay)
         draw_overlay_page(app.overlay);
