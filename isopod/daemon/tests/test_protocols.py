@@ -26,7 +26,7 @@ from isopod.settings import Settings  # noqa: E402
 from isopod.state import State  # noqa: E402
 from isopod.system import System  # noqa: E402
 from isopod.util import enc, fmt_duration, index_letter, matches, sort_key, spawn, split_path  # noqa: E402
-from isopod.wifi import parse_terse  # noqa: E402
+from isopod.wifi import FakeWifi, Wifi, parse_terse  # noqa: E402
 
 
 class UtilTest(unittest.TestCase):
@@ -1086,6 +1086,17 @@ class BluetoothTest(unittest.IsolatedAsyncioTestCase):
         await self.bt._recover(settle=0)
         self.assertEqual(self.bluez.calls, [("power", True)], "though ROCKNIX's setting is off again")
 
+    async def test_switching_off_powers_the_adapter_down_while_its_service_still_runs(self):
+        class Service:
+            async def set_bluetooth(_, on):
+                self.bluez.calls.append(("service", on))
+
+        self.bt.system = Service()
+        await self.bt.set_enabled(False)
+        await self.bt.set_enabled(True)
+        self.assertEqual(self.bluez.calls, [("power", False), ("service", False),
+                                            ("service", True), ("power", True)])
+
     async def test_bluetooth_left_off_stays_off(self):
         await self.bt.set_enabled(False)
         self.bluez.calls.clear()
@@ -1130,6 +1141,16 @@ class BluetoothTest(unittest.IsolatedAsyncioTestCase):
                                                 ("trust", PAD), ("connect", PAD, None)])
         await asyncio.sleep(0.01)
         self.assertEqual(self.bluez.calls[5:], [("discover", True)], "it looks again once that is done")
+
+
+class WifiSwitchTest(unittest.IsolatedAsyncioTestCase):
+    async def test_rocknix_which_sets_wifi_at_boot_and_on_wake_hears_of_the_switch(self):
+        told = []
+        wifi = Wifi(FakeWifi(), State(lambda snap: None), Translator("en"), BluetoothEvents(),
+                    remember=told.append)
+        await wifi.set_enabled(False)
+        await wifi.set_enabled(True)
+        self.assertEqual(told, [False, True])
 
 
 class HotplugTest(unittest.TestCase):

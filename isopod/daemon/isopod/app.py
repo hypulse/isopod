@@ -41,7 +41,9 @@ class App:
         self.music.song_changed = lambda: self.page_changed("/nowplaying", "/nowplaying/lyrics")
         self.bluetooth = Bluetooth(FakeBackend() if self.sim else RavelBackend(),
                                    self.state, self.settings, self.t, self, self.system)
-        self.wifi = Wifi(FakeWifi() if self.sim else Nmcli(), self.state, self.t, self)
+        # ROCKNIX switches Wi-Fi by its own setting at boot and on every wake.
+        self.wifi = Wifi(FakeWifi() if self.sim else Nmcli(), self.state, self.t, self,
+                         remember=lambda on: spawn(self.system.rocknix_setting("wifi.enabled", int(on))))
         self.audio = Audio(FakeAudio() if self.sim else Pactl(), self.state, self.settings,
                            remember=lambda level: spawn(self.system.rocknix_setting("audio.volume", level)),
                            lost=self._route_lost, first=self.system.rocknix_volume)

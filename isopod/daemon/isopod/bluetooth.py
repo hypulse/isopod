@@ -397,13 +397,15 @@ class Bluetooth:
         await self._switch(on)
 
     async def _switch(self, on):
-        await self.system.set_bluetooth(on)
         if on:
+            await self.system.set_bluetooth(True)
             await self._wait_for_adapter()
         try:
             await self.backend.set_powered(on)
         except Exception as e:
             log.warning("set powered failed: %s", e)
+        if not on:
+            await self.system.set_bluetooth(False)
         self._publish()
 
     async def _wait_for_adapter(self):

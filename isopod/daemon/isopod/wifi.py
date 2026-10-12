@@ -168,8 +168,9 @@ class Wifi:
     SCAN_EVERY = 15
     SIGNAL_EVERY = 30
 
-    def __init__(self, backend, state, t, events):
+    def __init__(self, backend, state, t, events, remember=None):
         self.backend = backend
+        self.remember = remember or (lambda on: None)
         self.state = state
         self.t = t
         self.events = events
@@ -219,6 +220,7 @@ class Wifi:
         return next((s for s in self.backend.saved if s["name"] == ssid), None)
 
     async def set_enabled(self, on):
+        self.remember(bool(on))
         await self.backend.set_enabled(on)
 
     async def scan(self):
