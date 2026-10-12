@@ -485,7 +485,7 @@ class Pages:
         items = []
         for s in stations:
             about = [self._country(s["country"])] if country and s["country"] else []
-            about += [self.t("genre_" + g) for g in s.get("genres", [])[:genres] if g in GENRES]
+            about += [GENRES[g][0] for g in s.get("genres", [])[:genres] if g in GENRES]
             mark = "playing" if on and s["uuid"] == on["uuid"] else "none"
             items.append(item("st:" + s["uuid"], s["name"], mark, subtitle=" · ".join(about) or None,
                               art=radio.logo(s), star=radio.is_favorite(s["uuid"]) or None))
@@ -523,12 +523,10 @@ class Pages:
         kind = rest[0]
         name = rest[1] if len(rest) > 1 else ""
         if kind == "genres":
-            rows = sorted((item("g:" + g, t("genre_" + g)) for g in GENRES if g not in DECADES),
-                          key=lambda row: sort_key(row["title"]))
-            rows += [header(t("decades"))] + [item("g:" + g, t("genre_" + g)) for g in DECADES]
-            return page(path, t("genres"), rows, index=True)
+            names = sorted((g for g in GENRES if g not in DECADES), key=lambda g: sort_key(GENRES[g][0]))
+            return page(path, t("genres"), [item("g:" + g, GENRES[g][0]) for g in (*names, *DECADES)], index=True)
         title = {"favorites": t("favorites"), "top": t("popular"), "countries": t("countries"),
-                 "genre": t("genre_" + name) if name in GENRES else name, "country": self._country(name),
+                 "genre": GENRES[name][0] if name in GENRES else name, "country": self._country(name),
                  "search": t("search_for", q=name)}.get(kind) or ""
         try:
             if kind == "countries":

@@ -21,28 +21,35 @@ log = logging.getLogger("isopod.radio")
 
 DIRECTORY = "all.api.radio-browser.info"
 USER_AGENT = f"isopod/{__version__}"
-# The genres isoPod lists, each with the tags the directory is asked for it: stations tag
-# themselves in their own words. Their order is the order a station's own genre is picked in,
-# the narrower before the wider.
+# The genres isoPod lists: the name each goes by, in English as the genres of songs are, and
+# the tags the directory is asked for it, since stations tag themselves in their own words.
+# Their order is the order a station's own genre is picked in, the narrower before the wider.
 GENRES = {
-    "classicrock": ("classic rock",), "hardrock": ("hard rock",), "alternative": ("alternative", "alternative rock"),
-    "indie": ("indie", "indie rock"), "punk": ("punk", "punk rock"), "metal": ("metal", "heavy metal"),
-    "newwave": ("new wave",), "rock": ("rock",), "jazz": ("jazz",), "blues": ("blues",), "soul": ("soul",),
-    "funk": ("funk",), "rnb": ("rnb", "r&b"), "disco": ("disco",), "hiphop": ("rap", "hiphop", "hip-hop"),
-    "reggae": ("reggae",), "gospel": ("gospel",), "house": ("house",), "techno": ("techno",), "trance": ("trance",),
-    "dnb": ("drum and bass",), "ambient": ("ambient",), "lofi": ("lofi", "lo-fi"), "chillout": ("chillout", "chill"),
-    "lounge": ("lounge",), "dance": ("dance", "edm"), "electronic": ("electronic", "electro"), "opera": ("opera",),
-    "piano": ("piano",), "soundtrack": ("soundtrack",), "instrumental": ("instrumental",),
-    "classical": ("classical",), "easy": ("easy listening",), "kpop": ("kpop", "k-pop"), "jpop": ("jpop", "j-pop"),
-    "anime": ("anime",), "country": ("country",), "folk": ("folk",), "salsa": ("salsa",),
-    "reggaeton": ("reggaeton",), "latin": ("latino", "latin"), "world": ("world music", "world"),
-    "christian": ("christian",), "kids": ("kids", "children"), "pop": ("pop",), "oldies": ("oldies",),
-    "news": ("news",), "talk": ("talk",), "sports": ("sports", "sport"), "comedy": ("comedy",),
-    "culture": ("culture",), "50s": ("50s",), "60s": ("60s", "60's"), "70s": ("70s", "70's"), "80s": ("80s", "80's"),
-    "90s": ("90s", "90's"), "00s": ("2000s", "00s"), "10s": ("2010s", "10s"),
+    "classicrock": ("Classic Rock", "classic rock"), "hardrock": ("Hard Rock", "hard rock"),
+    "alternative": ("Alternative", "alternative", "alternative rock"), "indie": ("Indie", "indie", "indie rock"),
+    "punk": ("Punk", "punk", "punk rock"), "metal": ("Metal", "metal", "heavy metal"),
+    "newwave": ("New Wave", "new wave"), "rock": ("Rock", "rock"), "jazz": ("Jazz", "jazz"),
+    "blues": ("Blues", "blues"), "soul": ("Soul", "soul"), "funk": ("Funk", "funk"), "rnb": ("R&B", "rnb", "r&b"),
+    "disco": ("Disco", "disco"), "hiphop": ("Hip-Hop", "rap", "hiphop", "hip-hop"), "reggae": ("Reggae", "reggae"),
+    "gospel": ("Gospel", "gospel"), "house": ("House", "house"), "techno": ("Techno", "techno"),
+    "trance": ("Trance", "trance"), "dnb": ("Drum & Bass", "drum and bass"), "ambient": ("Ambient", "ambient"),
+    "lofi": ("Lo-Fi", "lofi", "lo-fi"), "chillout": ("Chillout", "chillout", "chill"),
+    "lounge": ("Lounge", "lounge"), "dance": ("Dance", "dance", "edm"),
+    "electronic": ("Electronic", "electronic", "electro"), "opera": ("Opera", "opera"), "piano": ("Piano", "piano"),
+    "soundtrack": ("Soundtrack", "soundtrack"), "instrumental": ("Instrumental", "instrumental"),
+    "classical": ("Classical", "classical"), "easy": ("Easy Listening", "easy listening"),
+    "kpop": ("K-Pop", "kpop", "k-pop"), "jpop": ("J-Pop", "jpop", "j-pop"), "anime": ("Anime", "anime"),
+    "country": ("Country", "country"), "folk": ("Folk", "folk"), "salsa": ("Salsa", "salsa"),
+    "reggaeton": ("Reggaeton", "reggaeton"), "latin": ("Latin", "latino", "latin"),
+    "world": ("World", "world music", "world"), "christian": ("Christian", "christian"),
+    "kids": ("Kids", "kids", "children"), "pop": ("Pop", "pop"), "oldies": ("Oldies", "oldies"),
+    "news": ("News", "news"), "talk": ("Talk", "talk"), "sports": ("Sports", "sports", "sport"),
+    "comedy": ("Comedy", "comedy"), "culture": ("Culture", "culture"), "50s": ("50s", "50s"),
+    "60s": ("60s", "60s", "60's"), "70s": ("70s", "70s", "70's"), "80s": ("80s", "80s", "80's"),
+    "90s": ("90s", "90s", "90's"), "00s": ("2000s", "2000s", "00s"), "10s": ("2010s", "2010s", "10s"),
 }
 DECADES = ("50s", "60s", "70s", "80s", "90s", "00s", "10s")
-ALIASES = {tag: genre for genre, tags in GENRES.items() for tag in tags}
+ALIASES = {tag: genre for genre, (_, *tags) in GENRES.items() for tag in tags}
 ALIASES.update({"pop music": "pop", "top 40": "pop", "hits": "pop", "smooth jazz": "jazz", "hip hop": "hiphop",
                 "classical music": "classical", "electronica": "electronic", "deep house": "house",
                 "country music": "country", "classic hits": "oldies", "information": "news", "local news": "news",
@@ -214,7 +221,7 @@ class Radio:
         params = {"order": "clickcount", "reverse": "true", "limit": FETCH, "hidebroken": "true"}
         kind, _, name = key.partition("-")
         if kind == "genre":
-            return await self._stations(*({**params, "tag": tag, "tagExact": "true"} for tag in GENRES[name]))
+            return await self._stations(*({**params, "tag": tag, "tagExact": "true"} for tag in GENRES[name][1:]))
         if kind == "country":
             params["countrycode"] = name
         return await self._stations(params)

@@ -579,6 +579,11 @@ class RadioPagesTest(unittest.IsolatedAsyncioTestCase):
         genres = await self.rows("/radio/genres")
         self.assertEqual(genres[:3] + genres[-3:], ["Alternative", "Ambient", "Anime", "90s", "2000s", "2010s"],
                          "by name, and the decades after them in their own order")
+        self.app.t = Translator("ko")
+        self.assertEqual((await self.rows("/radio/genres"))[0], "Alternative", "in English in any language")
+        self.assertEqual((await self.rows("/radio/top", "subtitle"))[0], "프랑스 · Jazz")
+        self.assertEqual((await self.pages.build("/radio/genre/00s"))["title"], "2000s")
+        self.app.t = Translator("en")
         self.assertEqual((await self.pages.activate("/radio/genres", "g:jazz"))["push"], "/radio/genre/jazz")
         self.assertEqual(await self.rows("/radio/countries"), ["France", "Japan"])
         self.assertEqual((await self.pages.activate("/radio/countries", "c:JP"))["push"], "/radio/country/JP")
