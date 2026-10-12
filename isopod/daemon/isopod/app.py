@@ -269,7 +269,7 @@ class App:
                 log.info("shell connected %.1f s after the kernel started", uptime or 0)
                 # Only a hello during boot measures boot; a restart of isopodd later does not.
                 self.ui_ready_at = uptime if uptime and uptime < 180 else 0
-                # ROCKNIX's boot scripts are done by now, and one of them set its brightness.
+                # ROCKNIX's 006-display has run by now and set its own brightness.
                 self.power.apply_brightness()
             return {"state": self.state.snapshot(), "strings": self.t.shell_strings(),
                     "lang": self.t.lang, "version": __version__}

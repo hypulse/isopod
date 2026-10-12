@@ -3,7 +3,8 @@
 # Copyright (C) 2026-present isoPod (https://github.com/hypulse/isopod)
 
 # Runs after 111-sway-init has rewritten the sway config: add isoPod's window
-# rules and make the shell the UI that autostart launches.
+# rules, for when sway is started again, and make the shell the UI that autostart
+# launches. 000-isopod-ui has started both by now.
 
 SWAY_CONFIG=/storage/.config/sway/config
 if [ -f "${SWAY_CONFIG}" ] && ! grep -q "/usr/share/isopod/sway.conf" "${SWAY_CONFIG}"; then
@@ -25,24 +26,6 @@ if [ ! -f /storage/.config/swap.conf ]; then
   printf 'ZRAM_SIZE="512"\nKSM_ENABLE="disable"\n' >/storage/.config/swap.conf
   systemctl reload rocknix-memory-manager
 fi
-
-# Media lives in /storage; a second microSD card, which a computer can read, shows up
-# inside each library as its own folder.
-CARD=/storage/games-external
-for KIND in music videos; do
-  mkdir -p "/storage/${KIND}"
-  LINK="/storage/${KIND}/SD Card"
-  if grep -qs " ${CARD} " /proc/mounts && mkdir -p "${CARD}/${KIND}" 2>/dev/null; then
-    [ -L "${LINK}" ] || ln -sfn "${CARD}/${KIND}" "${LINK}"
-  elif [ -L "${LINK}" ]; then
-    rm -f "${LINK}"
-  fi
-done
-
-# MPD is running by now and watches the folders it found when it started, which was
-# before the card was mounted. Started again it follows the card as well: a song copied
-# there, over the cable or any other way, is in the library without a scan being asked for.
-[ -d "/storage/music/SD Card/" ] && systemctl restart --no-block mpd
 
 # A Mac leaves a "._name" beside each file it copies to a card; those are not songs.
 [ -e /storage/music/.mpdignore ] || echo '._*' >/storage/music/.mpdignore
