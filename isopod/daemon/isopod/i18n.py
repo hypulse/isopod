@@ -63,7 +63,6 @@ STRINGS = {
     "wifi_connected": ("{ssid}에 연결됨", "Connected to {ssid}"),
     "wifi_failed": ("{ssid}에 연결할 수 없어요", "Couldn’t join {ssid}"),
     "forget": ("지우기", "Forget"),
-    "forget_network_q": ("‘{name}’ 네트워크를 지울까요?", "Forget “{name}”?"),
     "forgot_network": ("네트워크를 지웠어요", "Network Forgotten"),
 
     "my_devices": ("내 기기", "My Devices"),
@@ -105,8 +104,6 @@ STRINGS = {
     "clock_am": ("오전 {time}", "{time} AM"),
     "clock_pm": ("오후 {time}", "{time} PM"),
 
-    "cancel": ("취소", "Cancel"),
-    "ok": ("확인", "OK"),
     "done": ("완료", "Done"),
     "space": ("스페이스", "space"),
 }
@@ -126,7 +123,7 @@ class Translator:
         return text.format(**fmt) if fmt else text
 
     def shell_strings(self):
-        keys = ("now_playing", "nothing_playing", "cancel", "ok", "done", "space",
+        keys = ("now_playing", "nothing_playing", "done", "space",
                 "volume", "brightness", "shuffle", "repeat", "repeat_one", "on", "off",
                 "opening", "searching", "connecting", "empty_list", "clock_am", "clock_pm")
         return {k: self(k) for k in keys}

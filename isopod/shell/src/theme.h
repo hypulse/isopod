@@ -59,6 +59,7 @@ typedef struct { unsigned char r, g, b, a; } Rgba;
 #define C_ACCENT RGB(28, 110, 226)
 #define C_GREEN RGB(52, 199, 89)
 #define C_RED RGB(255, 59, 48)
+#define C_RED_TOP RGB(255, 104, 94)
 #define C_TRACK RGB(214, 214, 219)
 #define C_SWITCH_OFF RGB(222, 222, 226)
 #define C_HUD RGBA(28, 28, 30, 225)

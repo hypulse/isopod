@@ -381,7 +381,7 @@ void nav_pop(void)
 void nav_home(void)
 {
     close_overlay();
-    app.sheet.active = app.confirm.active = app.keyboard.active = false;
+    app.sheet.active = app.keyboard.active = false;
     if (app.depth <= 1)
         return;
     Page *leaving = app.stack[--app.depth];
@@ -483,21 +483,6 @@ static void open_sheet(cJSON *sh)
     s->active = true;
 }
 
-static void open_confirm(cJSON *c)
-{
-    Confirm *d = &app.confirm;
-    xfree(&d->title);
-    xfree(&d->ok);
-    xfree(&d->token);
-    d->title = json_str(c, "title");
-    d->ok = json_str(c, "ok");
-    d->token = json_str(c, "token");
-    d->destructive = json_bool(c, "destructive");
-    d->choice = 0;
-    d->at = SDL_GetTicks();
-    d->active = true;
-}
-
 static bool kb_last_hangul;
 
 static void open_keyboard(cJSON *in)
@@ -546,8 +531,6 @@ void nav_apply(cJSON *act, const char *hint)
     cJSON *x;
     if ((x = cJSON_GetObjectItemCaseSensitive(act, "sheet")))
         open_sheet(x);
-    if ((x = cJSON_GetObjectItemCaseSensitive(act, "confirm")))
-        open_confirm(x);
     if ((x = cJSON_GetObjectItemCaseSensitive(act, "input")))
         open_keyboard(x);
     app.dirty = true;
@@ -766,20 +749,6 @@ static void sheet_key(const char *key, bool repeat)
     }
 }
 
-static void confirm_key(const char *key)
-{
-    Confirm *c = &app.confirm;
-    if (!strcmp(key, "left") || !strcmp(key, "right") || !strcmp(key, "up") || !strcmp(key, "down"))
-        c->choice = !c->choice;
-    else if (!strcmp(key, "back"))
-        c->active = false;
-    else if (!strcmp(key, "confirm")) {
-        c->active = false;
-        if (c->choice == 1 && c->token)
-            resolve(c->token, NULL);
-    }
-}
-
 static void kb_submit(Keyboard *k)
 {
     hangul_commit(k);
@@ -877,8 +846,6 @@ void nav_key(const char *key, bool repeat)
     }
     if (app.keyboard.active) {
         keyboard_key(key, repeat);
-    } else if (app.confirm.active) {
-        confirm_key(key);
     } else if (app.sheet.active) {
         sheet_key(key, repeat);
     } else if (!strcmp(key, "play") && !repeat) {

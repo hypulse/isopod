@@ -1197,6 +1197,27 @@ class WifiSwitchTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(told, [False, True])
 
 
+class SavedNetworkTest(unittest.IsolatedAsyncioTestCase):
+    async def test_a_saved_network_is_joined_or_forgotten_from_the_same_sheet_as_a_device(self):
+        class NoApp:
+            t = Translator("en")
+            state = State(lambda snap: None)
+
+        app = NoApp()
+        app.wifi = Wifi(FakeWifi(), app.state, app.t, BluetoothEvents())
+        await app.wifi.backend.refresh()
+        pages = Pages(app)
+
+        async def sheet(uuid):
+            return (await pages.alt("/settings/wifi/saved", "u:" + uuid))["sheet"]
+
+        self.assertEqual([i["key"] for i in (await sheet("u-home"))["items"]], ["forget"], "it is joined")
+        office = await sheet("u-office")
+        self.assertEqual((office["title"], [i["key"] for i in office["items"]]), ("Office 5G", ["join", "forget"]))
+        await pages.resolve(office["token"], "forget")
+        self.assertEqual([s["name"] for s in app.wifi.saved()], ["Home"])
+
+
 class HotplugTest(unittest.TestCase):
     def test_a_kernel_message_becomes_its_fields(self):
         raw = (b"add@/devices/virtual/input/input7/event5\0ACTION=add\0SUBSYSTEM=input\0"

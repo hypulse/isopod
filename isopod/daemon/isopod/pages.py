@@ -110,7 +110,7 @@ class Pages:
         fn = self._tokens.pop(token, None)
         if fn is None:
             return {"none": True}
-        result = fn(value) if value is not None else fn()
+        result = fn(value)
         if asyncio.iscoroutine(result):
             result = await result
         return result or {"none": True}
@@ -636,9 +636,11 @@ class Pages:
         if sub == "wifi/saved" and key.startswith("u:"):
             saved = next((s for s in self.app.wifi.saved() if s["uuid"] == key[2:]), None)
             if saved:
-                return {"confirm": {"title": t("forget_network_q", name=saved["name"]), "ok": t("forget"),
-                                    "destructive": True,
-                                    "token": self._token(lambda: self._forget_wifi(saved["uuid"]))}}
+                joined = any(n["active"] and n["ssid"] == saved["name"] for n in self.app.wifi.networks())
+                options = [] if joined else [{"key": "join", "title": t("connect")}]
+                options.append({"key": "forget", "title": t("forget"), "destructive": True})
+                return {"sheet": {"title": saved["name"], "items": options,
+                                  "token": self._token(lambda c: self._network_choice(saved, c))}}
         if sub == "bluetooth" and key.startswith("d:"):
             dev = self.app.bluetooth.find(key[2:])
             if dev and dev in self.app.bluetooth.my_devices():
@@ -647,8 +649,11 @@ class Pages:
                 return {"sheet": {"title": dev.name, "items": options,
                                   "token": self._token(lambda c: self._device_choice(dev.path, c))}}
 
-    async def _forget_wifi(self, uuid):
-        await self.app.wifi.forget(uuid)
+    async def _network_choice(self, saved, choice):
+        if choice == "join":
+            spawn(self.app.wifi.join(saved["name"]))
+        elif choice == "forget":
+            await self.app.wifi.forget(saved["uuid"])
         return {"reload": True}
 
     async def _device_choice(self, dev_path, choice):

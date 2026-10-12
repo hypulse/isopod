@@ -67,14 +67,6 @@ typedef struct {
 
 typedef struct {
     bool active;
-    char *title, *ok, *token;
-    bool destructive;
-    int choice;
-    Uint32 at;
-} Confirm;
-
-typedef struct {
-    bool active;
     char *title, *placeholder, *token;
     bool secret, shift, symbols, hangul;
     char base[256], text[256];
@@ -119,7 +111,6 @@ typedef struct {
     Page *leaving;
 
     Sheet sheet;
-    Confirm confirm;
     Keyboard keyboard;
     Status status;
     cJSON *strings;

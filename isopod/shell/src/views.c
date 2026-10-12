@@ -829,7 +829,9 @@ static void draw_action_sheet(void)
     }
     for (int i = 0; i < s->count; i++) {
         bool sel = i == s->sel;
-        if (sel)
+        if (sel && s->items[i].destructive)
+            fill_gradient(0, y, SCREEN_W, ROW_H, C_RED_TOP, C_RED);
+        else if (sel)
             draw_selection(0, y, SCREEN_W, ROW_H);
         Rgba c = sel ? C_WHITE : (s->items[i].destructive ? C_RED : C_ACCENT);
         draw_text_center(FONT_MEDIUM, FONT_ROW, s->items[i].title, SCREEN_W / 2, y + 9, c, 520);
@@ -837,31 +839,6 @@ static void draw_action_sheet(void)
             draw_text_right(FONT_REGULAR, FONT_VALUE, s->items[i].value, SCREEN_W - PAD_X, y + 11,
                             sel ? C_WHITE : C_TEXT2);
         y += ROW_H;
-    }
-}
-
-static void draw_confirm(void)
-{
-    Confirm *c = &app.confirm;
-    float t = overlay_t(c->at, 200);
-    fill_rect(0, 0, SCREEN_W, SCREEN_H, RGBA(0, 0, 0, (Uint8)(100 * t)));
-    int w = 440, h = 190, x = (SCREEN_W - w) / 2, y = (SCREEN_H - h) / 2 + (int)((1 - t) * 30);
-    fill_round(x, y + 4, w, h, 20, RGBA(0, 0, 0, 30));
-    fill_round(x, y, w, h, 20, C_SHEET);
-    draw_text_wrap(FONT_SEMIBOLD, FONT_NP_LINE + 1, c->title, x + 30, y + 34, w - 60, 32, 2, C_TEXT);
-    const char *labels[2] = {S("cancel", "Cancel"), c->ok ? c->ok : S("ok", "OK")};
-    int bw = (w - 60 - 16) / 2;
-    for (int i = 0; i < 2; i++) {
-        int bx = x + 30 + i * (bw + 16), by = y + h - 72;
-        bool sel = c->choice == i;
-        if (sel) {
-            fill_round(bx, by, bw, 50, 12, C_SEL_BOTTOM);
-            fill_gradient(bx + 6, by + 1, bw - 12, 24, RGBA(255, 255, 255, 45), RGBA(255, 255, 255, 0));
-        } else {
-            fill_round(bx, by, bw, 50, 12, RGB(229, 229, 234));
-        }
-        Rgba col = sel ? C_WHITE : (i == 1 && c->destructive ? C_RED : C_ACCENT);
-        draw_text_center(FONT_SEMIBOLD, FONT_VALUE + 1, labels[i], bx + bw / 2, by + 11, col, bw - 16);
     }
 }
 
@@ -1084,8 +1061,6 @@ void render(void)
         draw_overlay_page(app.overlay);
     if (app.sheet.active)
         draw_action_sheet();
-    if (app.confirm.active)
-        draw_confirm();
     if (app.keyboard.active)
         draw_keyboard();
     draw_letter();
