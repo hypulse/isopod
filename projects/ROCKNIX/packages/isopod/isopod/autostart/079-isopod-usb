@@ -3,8 +3,17 @@
 # Copyright (C) 2026-present isoPod (https://github.com/hypulse/isopod)
 
 # Over the cable a computer gets the two libraries by MTP. ROCKNIX's usbgadget starts
-# umtprd with /etc/umtprd/umtprd.conf, which lists /storage/roms, so isoPod's covers it:
-# before 081-usbgadget, which starts the gadget if it was left on at power off.
+# umtprd with /etc/umtprd/umtprd.conf, which lists /storage/roms, so isoPod's covers it,
+# before 081-usbgadget starts the gadget in the mode ROCKNIX remembers.
 mkdir -p /storage/music /storage/videos /storage/.update
 grep -qs " /etc/umtprd/umtprd.conf " /proc/mounts ||
   mount --bind /usr/share/isopod/umtprd.conf /etc/umtprd/umtprd.conf
+
+# That mode is file transfer, every boot. In ROCKNIX's "disabled" the port is a USB host
+# and puts 5 V on the cable: a computer plugged in then charges from isoPod and sees no
+# device. ROCKNIX's network mode is kept where someone chose it.
+CONF=/storage/.cache/usbgadget/usbgadget.conf
+if ! grep -qs "^USB_MODE=cdc" "${CONF}"; then
+  mkdir -p /storage/.cache/usbgadget
+  echo "USB_MODE=mtp" >"${CONF}"
+fi

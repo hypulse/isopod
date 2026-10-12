@@ -290,28 +290,6 @@ class CableTest(unittest.IsolatedAsyncioTestCase):
         battery.refresh()
         self.assertEqual(cable, [True, False], "the battery, always there, is not the cable")
 
-    async def gadget(self, mode):
-        """ROCKNIX's usbgadget: without a word it says its mode, with one it is given one."""
-        d = tempfile.mkdtemp()
-        with open(os.path.join(d, "usbgadget"), "w") as f:
-            f.write(f'#!/bin/sh\n[ $# = 0 ] && echo {mode} || echo "$1" >>{d}/asked\n')
-        os.chmod(os.path.join(d, "usbgadget"), 0o755)
-        path = os.environ["PATH"]
-        os.environ["PATH"] = d + os.pathsep + path
-        try:
-            system = System()
-            await system.usb_transfer(True)
-            await system.usb_transfer(False)
-        finally:
-            os.environ["PATH"] = path
-        return open(os.path.join(d, "asked")).read().split() if os.path.exists(os.path.join(d, "asked")) else []
-
-    async def test_files_are_offered_while_the_cable_is_in(self):
-        self.assertEqual(await self.gadget("disabled"), ["file_transfer", "disabled"])
-
-    async def test_rocknix_network_mode_is_left_alone(self):
-        self.assertEqual(await self.gadget("network"), [])
-
 
 class BatteryWarningTest(unittest.TestCase):
     def test_warns_once_per_level_and_resets_on_charge(self):
