@@ -104,6 +104,8 @@ static void keyboard(SDL_KeyboardEvent *e)
     case SDLK_DOWN: nav_key("down", rep); break;
     case SDLK_LEFT: nav_key("left", rep); break;
     case SDLK_RIGHT: nav_key("right", rep); break;
+    case SDLK_PAGEUP: nav_key("pageup", rep); break;
+    case SDLK_PAGEDOWN: nav_key("pagedown", rep); break;
     case SDLK_RETURN: nav_key("confirm", rep); break;
     case SDLK_ESCAPE:
     case SDLK_BACKSPACE: nav_key("back", rep); break;

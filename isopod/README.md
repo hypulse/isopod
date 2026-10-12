@@ -70,7 +70,8 @@ Every screen is a list, and every list works the same way.
 | Y | Now Playing |
 | Start | Play or pause |
 | Select | Control Center |
-| L1, R1, L2, R2 | Nothing |
+| L1, R1 | A page up or down in a list |
+| L2, R2 | Nothing |
 | Home | Home screen; from an app, pause the app and come home |
 | Volume | Volume, always |
 | Power | Turn the screen off or on; hold for Sleep, Restart and Shut Down |

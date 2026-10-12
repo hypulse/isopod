@@ -623,7 +623,11 @@ static void list_key(Page *p, const char *key, bool repeat)
         jump_letter(p, -1);
     else if (!strcmp(key, "right"))
         jump_letter(p, 1);
-    else if (!strcmp(key, "confirm") && !repeat)
+    else if ((!strcmp(key, "pageup") || !strcmp(key, "pagedown")) && p->count) {
+        /* L1 and R1 turn a page: the rows on screen less one, which keeps the place. */
+        int rows = viewport_h(p) / row_height(p, p->sel) - 1;
+        move_sel(p, (rows < 1 ? 1 : rows) * (key[4] == 'u' ? -1 : 1), true);
+    } else if (!strcmp(key, "confirm") && !repeat)
         activate(p);
     else if (!strcmp(key, "more") && !repeat && selectable(p, p->sel))
         request_do("alt", p->path, p->items[p->sel].key, p->items[p->sel].title);
