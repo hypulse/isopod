@@ -30,11 +30,25 @@ fi
 # A Mac leaves a "._name" beside each file it copies to a card; those are not songs.
 [ -e /storage/music/.mpdignore ] || echo '._*' >/storage/music/.mpdignore
 
+# The root password is ROCKNIX's, the same on every device and public, and isoPod joins
+# whatever Wi-Fi it is carried to. So sshd takes keys alone and runs only once there is
+# one: a computer's public key comes over the cable, as a file named authorized_keys in
+# the update folder, and is taken from there if it holds a key.
+if ssh-keygen -l -f /storage/.update/authorized_keys >/dev/null 2>&1; then
+  mkdir -p /storage/.ssh
+  mv /storage/.update/authorized_keys /storage/.ssh/authorized_keys
+  chmod 600 /storage/.ssh/authorized_keys
+fi
+
 # ROCKNIX's 099-networkservices starts sshd and then, moving on to fstrim, which names no
-# condition file of its own, takes sshd's away again, so the unit is skipped at every boot.
+# condition file of its own, takes sshd's away again: the unit is skipped at every boot,
+# unless it was quick enough, and then it runs without these options.
 . /etc/profile.d/001-functions
-if [ "$(get_setting ssh.enabled)" = "1" ]; then
+if [ "$(get_setting ssh.enabled)" = "1" ] && [ -s /storage/.ssh/authorized_keys ]; then
   mkdir -p /storage/.cache/services
-  touch /storage/.cache/services/sshd.conf
-  systemctl start --no-block sshd
+  echo 'SSH_ARGS="-o PasswordAuthentication=no -o KbdInteractiveAuthentication=no"' \
+    >/storage/.cache/services/sshd.conf
+  systemctl restart --no-block sshd
+else
+  systemctl stop --no-block sshd
 fi

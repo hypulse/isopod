@@ -135,6 +135,9 @@ To update an installed isoPod, take the `.tar` from `isopod-H700-update` of a la
 copy it to the `Update` storage over the cable (or to `/storage/.update` over SSH) and
 restart.
 
+SSH is off until the device has your public key, and takes no password: copy the key to
+the `Update` storage as a file named `authorized_keys` and restart, then log in as `root`.
+
 ## Build
 
 The image builds the same way ROCKNIX does, in its build container. isoPod ships no 32-bit
