@@ -206,8 +206,8 @@ class App:
             self.server.broadcast({"event": "key", "key": "home"})
             return
         if self.apps.front:
-            # A video has the gamepad to itself, but up and down are the volume there, and
-            # the volume is isoPod's.
+            # A video has the gamepad to itself, but up and down are the volume there as
+            # they are in Now Playing, and the volume is isoPod's.
             if name in ("up", "down") and self.apps.front_plays_media:
                 await self.volume(1 if name == "up" else -1)
             return

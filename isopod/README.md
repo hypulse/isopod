@@ -73,7 +73,8 @@ Every screen is a list, and every list works the same way.
 | Power | Turn the screen off or on; hold for Sleep, Restart and Shut Down |
 
 In Now Playing, ← and → are the previous and the next song, and held they wind through the
-song, as on an iPod; ← starts a song again once it is three seconds in. Y shows the lyrics.
+song, as on an iPod; ← starts a song again once it is three seconds in. ↑ and ↓ change the
+volume, and Y shows the lyrics.
 
 The on-screen keyboard goes around its edges the way lists do.
 

@@ -715,6 +715,14 @@ static void coverflow_key(Page *p, const char *key, bool repeat)
     }
 }
 
+static void volume(int delta)
+{
+    cJSON *req = cJSON_CreateObject();
+    cJSON_AddStringToObject(req, "op", "volume");
+    cJSON_AddNumberToObject(req, "delta", delta);
+    ipc_request(req, NULL, NULL);
+}
+
 /* Left and right as on the iPod: let go at once they are the previous and the next song,
  * held they wind through this one. Which it was is known when the button comes up. */
 static int np_skip;
@@ -728,6 +736,10 @@ static void nowplaying_key(const char *key, bool repeat)
         player("seek", dir * 3);
     else if (dir)
         np_skip = dir;
+    else if (!strcmp(key, "up"))
+        volume(1);
+    else if (!strcmp(key, "down"))
+        volume(-1);
     else if (!strcmp(key, "more") && !repeat)
         request_do("alt", "/nowplaying", NULL, NULL);
     else if (!strcmp(key, "back") && !repeat)
