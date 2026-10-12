@@ -322,6 +322,7 @@ def build(out):
         done(img, 22, 22, os.path.join(icons, f"toast-{name}.png"))
 
     art(out)
+    splash(out)
 
 
 def gradient(size, top, bottom):
@@ -344,6 +345,79 @@ def art(out):
     tint = Image.new("RGBA", (size, size), (158, 158, 166, 255))
     base.paste(tint, (0, 0), glyph)
     base.convert("RGB").save(os.path.join(out, "art-default.png"))
+
+
+PILL_BUG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "art", "pill-bug.png")
+
+
+def pill_bug(path=PILL_BUG, plates=7, gap=40):
+    """A pill bug for the boot screen, to stand in until someone draws the real one: it is
+    only made when art/pill-bug.png is not there. It curls into its ball about a round
+    middle: a ring of plates from the head, right of the top, round to a thinner tail left
+    of it. Any square picture on a clear background can take its place."""
+    if os.path.exists(path):
+        return
+    n = 1200
+    img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    c, outer, inner, light = n / 2, n * 0.43, n * 0.197, 240
+    head, step = gap / 2 - 90, (360 - gap) / plates
+
+    def at(radius, degrees):
+        a = math.radians(degrees)
+        return (c + radius * math.cos(a), c + radius * math.sin(a))
+
+    def rim(plate):
+        return outer * (1 - 0.1 * max(0, plate - plates + 3) / 3)
+
+    def dot(centre, radius, fill):
+        d.ellipse([centre[0] - radius, centre[1] - radius, centre[0] + radius, centre[1] + radius], fill=fill)
+
+    def grey(shade):
+        return (shade, shade, shade, 255)
+
+    for i in range(plates):
+        a0 = head + step * i
+        arc = [at(rim(i) + (rim(i + 1) - rim(i)) * t / 16, a0 + step * t / 16) for t in range(17)]
+        d.polygon(arc + [at(inner, a0 + step - step * t / 16) for t in range(17)], fill=grey(light - 11 * i))
+    for i in range(1, plates):
+        d.line([at(inner * 0.9, head + step * i - 5), at(outer * 1.03, head + step * i + 5)],
+               fill=(0, 0, 0, 0), width=round(n * 0.02))
+    thick = (outer - inner) / 2
+    dot(at(inner + thick, head + 3), thick, grey(light))
+    dot(at(inner + thick * 1.2, head + 9), n * 0.02, grey(0))
+    for lean in (-18, 8):
+        d.line([at(outer - thick * 0.25, head + 2), at(outer + thick * 0.55, head + lean)],
+               fill=grey(light), width=round(n * 0.014))
+    tail = (rim(plates) - inner) / 2
+    dot(at(inner + tail, head + 360 - gap - 2), tail, grey(light - 11 * (plates - 1)))
+    dot((c, c), inner * 0.52, grey(light))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    img.save(path)
+
+
+def splash(out, credit="based on ROCKNIX"):
+    """The boot screen, light on black and all on one centre line: the pill bug, isoPod's
+    name under it and, small, whose work it stands on. A PPM that isopod-splash copies to
+    the middle of the framebuffer as it is."""
+    pill_bug()
+    w, mark, name_size, credit_size = 300, 144, 44, 17
+    name_font = ImageFont.truetype(BOLD_FONT, name_size * SS)
+    credit_font = ImageFont.truetype(BOLD_FONT.replace("-Bold", "-Medium"), credit_size * SS)
+    top = mark - 6
+    h = top + 22 + name_size + 14 + 18 + credit_size + 6
+    img = Image.new("RGB", (w * SS, h * SS), (0, 0, 0))
+    d = ImageDraw.Draw(img)
+    parts = (("iso", (168, 168, 168)), ("Pod", (244, 244, 244)))
+    x = (w * SS - sum(name_font.getlength(text) for text, _ in parts)) / 2
+    for text, color in parts:
+        d.text((x, (top + 22) * SS), text, font=name_font, fill=color)
+        x += name_font.getlength(text)
+    d.text((w * SS / 2, (h - 6) * SS), credit, font=credit_font, fill=(118, 118, 118), anchor="ms")
+    img = img.resize((w, h), Image.LANCZOS)
+    bug = Image.open(PILL_BUG).convert("RGBA").resize((mark, mark), Image.LANCZOS)
+    img.paste(bug, ((w - mark) // 2, 0), bug)
+    img.save(os.path.join(out, "splash.ppm"))
 
 
 if __name__ == "__main__":

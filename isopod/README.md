@@ -159,6 +159,15 @@ last such walk is in [`docs/ui`](docs/ui).
 docker run --rm -v "$PWD":/src -w /src isopod-dev isopod/tools/sim/shots.sh /src/isopod/docs/ui
 ```
 
+The boot screen is a picture, `isopod/shell/assets/splash.ppm`, that takes the place of
+ROCKNIX's logo once the system proper has started. Its pill bug is `isopod/art/pill-bug.png`:
+put another square drawing on a clear background there and lay the screen out again with
+
+```sh
+docker run --rm -v "$PWD":/src -w /src/isopod/tools isopod-dev \
+    python3 -c "import gen_assets; gen_assets.splash('../shell/assets')"
+```
+
 The desk runs the same system with a real mpv under a headless sway and records it: the
 storyboard in `isopod/tools/desk/demo.py` plays music with lyrics and videos in four
 formats with their subtitles, switching between them.

@@ -1,3 +1,4 @@
 shell/isopod-shell
 __pycache__/
 *.pyc
+shell/isopod-splash

@@ -33,4 +33,5 @@ makeinstall_target() {
 
 post_install() {
   enable_service isopodd.service
+  enable_service isopod-splash.service
 }

@@ -1,0 +1,11 @@
+[Unit]
+Description=isoPod's name under the boot logo
+DefaultDependencies=no
+ConditionPathExists=/dev/fb0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/isopod-splash
+
+[Install]
+WantedBy=sysinit.target
