@@ -91,7 +91,7 @@ Every screen is a list, and every list works the same way.
 | Start | Play or pause |
 | Select | Control Center |
 | L1, R1 | A page up or down in a list; in Cover Flow, which stands by artist and then by album, the artists of the letter before or after |
-| L2, R2 | Nothing |
+| L2, R2 | The song before and the one after, in any list and behind a book; nothing in a video |
 | Home | Home screen; from an app, pause the app and come home; on the home screen, back to that app |
 | Volume | Volume, always |
 | Power | Turn the screen off or on; hold for Sleep, Restart and Shut Down |
@@ -115,7 +115,8 @@ the text's size and spacing, where the D-pad moves, A chooses and B goes back; u
 menu's icons and in a list, ← and → turn its pages where it has more than one. Select
 starts a text selection: move the cross, A at its first word and A again at its last, then
 highlight, note, copy, translate or search; Select again before that gives it up. Start
-plays or pauses the music behind the page. The four shoulder buttons do nothing there.
+plays or pauses the music behind the page, and L2 and R2 change its song. L1 and R1 do
+nothing there.
 
 ## How it fits together
 

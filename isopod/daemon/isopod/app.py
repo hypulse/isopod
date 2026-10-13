@@ -212,6 +212,12 @@ class App:
             else:
                 self.server.broadcast({"event": "key", "key": "home"})
             return
+        if name in ("previous", "next"):
+            # L2 and R2 are the song before and the one after wherever music may play, in
+            # every list and behind a book. A video has the sound to itself.
+            if not self.apps.front_plays_media:
+                await (self.music.next() if name == "next" else self.music.previous())
+            return
         if self.apps.front:
             if self.apps.front_plays_media:
                 # A video has the gamepad to itself, but up and down are the volume there as

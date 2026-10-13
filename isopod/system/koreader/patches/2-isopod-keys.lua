@@ -8,7 +8,8 @@
 --           give it up again until the selection is made
 --
 -- Start and the four shoulder buttons do nothing here. Home, the volume keys and the
--- power key are isopodd's, which also has Start play or pause the music.
+-- power key are isopodd's, which also has Start play or pause the music and L2 and R2
+-- change its song.
 local Device = require("device")
 local Gamepad = require("device/sdl/gamepad")
 

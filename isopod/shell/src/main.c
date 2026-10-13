@@ -114,6 +114,8 @@ static void keyboard(SDL_KeyboardEvent *e)
     case SDLK_n: nav_key("now", rep); break;
     case SDLK_c: nav_key("control", rep); break;
     case SDLK_h: daemon_key("home"); break;
+    case SDLK_LEFTBRACKET: daemon_key("previous"); break;
+    case SDLK_RIGHTBRACKET: daemon_key("next"); break;
     case SDLK_p: daemon_key("power"); break;
     case SDLK_EQUALS: daemon_volume(1); break;
     case SDLK_MINUS: daemon_volume(-1); break;

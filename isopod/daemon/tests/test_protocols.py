@@ -1307,10 +1307,16 @@ class BooksTest(unittest.IsolatedAsyncioTestCase):
         self.app = App(parse_args(["--sim", "--socket", os.path.join(d, "s"), "--config", d, "--cache", d,
                                    "--data", d, "--books", self.books, "--mpd", os.path.join(d, "mpd")]))
         self.toggled = 0
+        self.skipped = []
 
         async def toggle():
             self.toggled += 1
+
+        async def step(way):
+            self.skipped.append(way)
         self.app.music.toggle = toggle
+        self.app.music.next = lambda: step("next")
+        self.app.music.previous = lambda: step("previous")
 
     async def test_the_list_is_books_and_folders_without_koreaders_notes(self):
         page = await self.app.pages.build("/books")
@@ -1363,6 +1369,21 @@ class BooksTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((self.toggled, self.app.state.get("volume")["level"]), (0, before))
         await self.app.key("play")
         self.assertEqual(self.toggled, 1)
+
+    async def test_l2_and_r2_change_the_song_in_a_list_and_behind_a_book_but_not_under_a_film_or_a_shut_lid(self):
+        sent = []
+        self.app.server.broadcast = lambda msg: msg["event"] == "key" and sent.append(msg)
+        await self.app.key("next")
+        await self.app.pages.activate("/books", "f:데미안.epub")
+        await self.app.key("previous")
+        self.assertEqual((self.skipped, sent), (["next", "previous"], []), "the shell is not asked")
+        await self.app.key("home")
+        await self.app.launch(self.app.catalog["video"], "film", ["film.mp4"])
+        await self.app.key("next")
+        await self.app.key("home")
+        self.app.power.lid_closed = True
+        await self.app.key("next")
+        self.assertEqual(self.skipped, ["next", "previous"])
 
     def test_koreader_gets_its_buttons_and_menu_at_every_start_and_its_settings_once(self):
         home = os.path.join(tempfile.mkdtemp(), "koreader")
