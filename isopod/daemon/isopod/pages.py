@@ -479,6 +479,10 @@ class Pages:
 
     # radio -------------------------------------------------------------------
 
+    def unreachable(self):
+        """Why the radio is out of reach: no Wi-Fi to reach it over, or no answer over it."""
+        return self.t("radio_unreachable" if self.app.state.get("wifi")["ssid"] else "wifi_needed")
+
     def _country(self, code):
         return country_name(code, self.t.lang) if code else None
 
@@ -539,10 +543,10 @@ class Pages:
                 return page(path, title, [item("c:" + c, n) for n, c in names], index=True)
             stations = await self._stations_for(rest)
         except RadioError:
-            return page(path, title, [], empty=empty("wifi", t("radio_unreachable")))
+            return page(path, title, [], empty=empty("wifi", self.unreachable()))
         if stations is None:
             return page(path, "", [])
-        nothing = {"favorites": empty("star", t("no_favorites_title"), t("no_station_favorites_text")),
+        nothing = {"favorites": empty("star", t("no_favorites_title"), t("no_favorites_text")),
                    "search": empty("search", t("no_results"))}.get(kind)
         about = {"genre": dict(genres=0), "country": dict(country=False, genres=2)}.get(kind, {})
         return page(path, title, self._station_items(path, stations, **about), rows="art", empty=nothing)

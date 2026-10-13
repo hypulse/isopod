@@ -567,8 +567,9 @@ class RadioPagesTest(unittest.IsolatedAsyncioTestCase):
         app.radio = Radio(d, d, directory=self.stations, download=lambda url: b"")
         app.radio.changed = lambda: app.page_changed("/radio")
         app.music.station_favorite = lambda station: app.radio.is_favorite(station.get("uuid"))
-        app.music.stream_failed = lambda: app.toast(app.t("radio_unreachable"))
         self.pages = Pages(app)
+        app.music.stream_failed = lambda: app.toast(self.pages.unreachable())
+        app.state.data["wifi"]["ssid"] = "Home"
         app.music.step_station = self.pages.step_station
         self.addCleanup(lambda: app.music._stream_watch and app.music._stream_watch.cancel())
 
@@ -603,6 +604,9 @@ class RadioPagesTest(unittest.IsolatedAsyncioTestCase):
         for path in ("/radio/top", "/radio/countries"):
             page = await self.pages.build(path)
             self.assertEqual((page["items"], page["empty"]["title"]), ([], "Couldn’t Connect"))
+        self.app.state.data["wifi"]["ssid"] = None
+        self.assertEqual((await self.pages.build("/radio/top"))["empty"]["title"], "Wi-Fi Needed",
+                         "with no network joined it says what is missing")
         self.stations.down = ()
         self.assertEqual(len(await self.rows("/radio/top")), 3)
         self.stations.down = ("/json/stations/search",)
@@ -1592,7 +1596,7 @@ class BluetoothTest(unittest.IsolatedAsyncioTestCase):
     async def test_a_failed_first_attempt_says_so_once_and_leaves_nothing_behind(self):
         self.bluez.errors["connect"] = ["org.bluez.Error.Failed -- br-connection-refused"] * 3
         await self.bt.activate(PODS)
-        self.assertEqual(self.events.toasts, ["AirPods Pro에 연결할 수 없어요"])
+        self.assertEqual(self.events.toasts, ["AirPods Pro에 연결할 수 없음"])
         self.assertEqual(len(self.connects()), 3)
         self.assertEqual(self.bluez.calls[-1], ("remove", PODS))
         self.assertEqual(self.events.found, [])
@@ -1602,14 +1606,14 @@ class BluetoothTest(unittest.IsolatedAsyncioTestCase):
         self.bluez.errors["connect"] = ["org.bluez.Error.Failed -- br-connection-page-timeout"]
         await self.bt.activate(PODS)
         self.assertEqual(len(self.connects()), 1)
-        self.assertEqual(self.events.toasts, ["AirPods Pro에 연결할 수 없어요"])
+        self.assertEqual(self.events.toasts, ["AirPods Pro에 연결할 수 없음"])
         self.assertIn(PODS, self.bluez.devices, "a device that was paired stays")
 
     async def test_a_link_that_drops_at_once_is_a_failure_said_once(self):
         self.bluez.drops.add(PODS)
         await self.bt.activate(PODS)
         self.assertEqual(len(self.connects()), 3)
-        self.assertEqual(self.events.toasts, ["AirPods Pro에 연결할 수 없어요"])
+        self.assertEqual(self.events.toasts, ["AirPods Pro에 연결할 수 없음"])
         self.assertIn(PODS, self.bluez.devices, "it did pair, so it stays to be tried again")
 
     async def test_headphones_that_connected_by_themselves_count(self):

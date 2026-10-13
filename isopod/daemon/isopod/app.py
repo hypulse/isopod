@@ -42,7 +42,7 @@ class App:
         self.music = Music(MPD(args.mpd, args.mpd_port), self.state, args.cache, music_dir=args.music)
         self.music.song_changed = lambda: self.page_changed("/nowplaying", "/nowplaying/lyrics")
         self.music.favorites_changed = lambda: self.page_changed("/music/*")
-        self.music.stream_failed = lambda: self.toast(self.t("radio_unreachable"), "wifi")
+        self.music.stream_failed = lambda: self.toast(self.pages.unreachable(), "wifi")
         self.radio = Radio(args.config, args.cache)
         self.radio.changed = lambda: self.page_changed("/radio/*")
         self.music.station_favorite = lambda station: self.radio.is_favorite(station.get("uuid"))
