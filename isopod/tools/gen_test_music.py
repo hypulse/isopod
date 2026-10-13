@@ -172,15 +172,14 @@ def main(root):
         cover(art, colors, motif, album, artist)
         encode(os.path.join(loose, f"{title}.mp3"), art, seconds, title, artist, album, year, genre, "1/1")
         os.remove(art)
-    playlists = os.path.join(root, "playlists")
-    os.makedirs(playlists, exist_ok=True)
-    with open(os.path.join(playlists, "드라이브.m3u"), "w") as f:
+    os.makedirs(os.path.join(root, "playlists"), exist_ok=True)
+    with open(os.path.join(music, "드라이브.m3u"), "w") as f:
         f.write("Aurora Lane/Night Drive/01 Neon Coast.mp3\n")
         f.write("Nova Kim/Orbit/01 Orbit.mp3\n")
         f.write("서울 야경/한강의 밤/02 첫차.mp3\n")
-    with open(os.path.join(playlists, "Late Night Jazz.m3u"), "w") as f:
-        f.write("The Midnight Owls/Quiet Hours/01 Blue Room.mp3\n")
-        f.write("The Midnight Owls/Quiet Hours/04 Soft Rain.mp3\n")
+    with open(os.path.join(music, "The Midnight Owls", "Late Night Jazz.m3u"), "w") as f:
+        f.write("Quiet Hours/01 Blue Room.mp3\n")
+        f.write("Quiet Hours/04 Soft Rain.mp3\n")
     videos = os.path.join(root, "videos")
     os.makedirs(os.path.join(videos, "Concerts"), exist_ok=True)
     for name in ("Big Buck Bunny.mp4", "Sintel.mkv", "Tears of Steel.mp4", "Concerts/Live at Han River.mp4"):

@@ -6,6 +6,7 @@ import re
 import sys
 import tempfile
 import time
+import unicodedata
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -15,7 +16,7 @@ from isopod.audio import Audio, FakeAudio, _sink  # noqa: E402
 from isopod import uevents  # noqa: E402
 from isopod.battery import Battery  # noqa: E402
 from isopod.bluetooth import A2DP_SINK, Backend, Bluetooth, Device, RavelBackend  # noqa: E402
-from isopod.mpd import MPD, MPDError, filter_expr, quote, records, values  # noqa: E402
+from isopod.mpd import MPD, filter_expr, quote, records, values  # noqa: E402
 from isopod.music import Music  # noqa: E402
 from isopod.pages import VIDEO_EXTS, Pages, folder_listing  # noqa: E402
 from isopod.apps import AppSpec, Apps, prepare_koreader  # noqa: E402
@@ -199,26 +200,22 @@ class NoAlbumTest(unittest.IsolatedAsyncioTestCase):
 
 
 class FavoritesTest(unittest.IsolatedAsyncioTestCase):
-    """A favourite is a song in a playlist MPD keeps, and that playlist is the first one listed."""
+    """A favourite is a line of Favorites.m3u in the music folder, the first playlist listed."""
 
     async def test_a_song_is_marked_listed_and_taken_out_again(self):
+        d = tempfile.mkdtemp()
+        favorites = os.path.join(d, "Favorites.m3u")
+
         class Mpd:
-            stored = {"Drive": ["a.mp3"]}
+            files = ["a.mp3", "b.mp3", "c.mp3"]
 
             async def call(self, name, *args):
+                if name == "listallinfo":
+                    lists = [("playlist", "Favorites.m3u")] if os.path.exists(favorites) else []
+                    return [p for f in self.files for p in (("file", f), ("title", f[0].upper()))] + lists
                 if name == "listplaylists":
-                    return [("playlist", p) for p in self.stored]
-                if name == "listplaylist":
-                    if args[0] not in self.stored:
-                        raise MPDError("ACK [50@0] {listplaylist} No such playlist")
-                    return [("file", f) for f in self.stored[args[0]]]
-                if name == "playlistadd":
-                    self.stored.setdefault(args[0], []).append(args[1])
+                    return [("playlist", "Drive")]
                 return []
-
-            async def call_list(self, commands):
-                for _, name, index in commands:
-                    del self.stored[name][int(index)]
 
         class NoApp:
             t = Translator("en")
@@ -228,10 +225,8 @@ class FavoritesTest(unittest.IsolatedAsyncioTestCase):
                 sleep_timer_left = staticmethod(lambda: 0)
 
         app = NoApp()
-        music = app.music = Music(Mpd(), app.state, tempfile.mkdtemp())
-        music.songs = [{"file": f, "title": f[0].upper(), "artist": "", "albumartist": "", "album": ""}
-                       for f in ("a.mp3", "b.mp3", "c.mp3")]
-        music._by_file = {s["file"]: s for s in music.songs}
+        music = app.music = Music(Mpd(), app.state, tempfile.mkdtemp(), music_dir=d)
+        await music.load_library()
         app.state.data["player"]["file"] = "b.mp3"
         pages = Pages(app)
 
@@ -241,9 +236,8 @@ class FavoritesTest(unittest.IsolatedAsyncioTestCase):
         async def rows(path, field="title"):
             return [i.get(field) for i in (await pages.build(path))["items"]]
 
-        await music.load_favorites()
         self.assertEqual(await rows("/music/playlists"), ["Favorites", "Drive"])
-        self.assertEqual(await rows("/music/favorites"), [], "MPD has no such playlist yet")
+        self.assertEqual(await rows("/music/favorites"), [], "there is no such file yet")
 
         for key in ("s2", "s1"):
             sheet = await pages.alt("/music/songs", key)
@@ -251,6 +245,7 @@ class FavoritesTest(unittest.IsolatedAsyncioTestCase):
             await choose(sheet)
         self.assertEqual(await rows("/music/favorites"), ["C", "B"], "in the order they were added")
         self.assertEqual(await rows("/music/songs", "star"), [None, True, True])
+        await music.load_library()
         self.assertEqual(await rows("/music/playlists"), ["Favorites", "Drive"], "and listed once")
         self.assertTrue(app.state.get("player")["favorite"], "the song playing is one of them")
 
@@ -260,9 +255,65 @@ class FavoritesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await rows("/music/favorites"), ["C"])
         self.assertFalse(app.state.get("player")["favorite"])
 
-        music.songs, music._by_file = [], {}
+        Mpd.files = ["a.mp3"]
+        await music.load_library()
         self.assertEqual(await rows("/music/favorites"), [], "a song taken off the card is not listed")
-        self.assertEqual(music.favorites, ["c.mp3"], "and is a favourite again when it is back")
+        await music.set_favorite("a.mp3", True)
+        with open(favorites, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "c.mp3\na.mp3\n", "and its line is kept")
+        Mpd.files = ["a.mp3", "c.mp3"]
+        await music.load_library()
+        self.assertEqual(await rows("/music/favorites"), ["C", "A"], "for when it is back")
+
+
+class PlaylistFilesTest(unittest.IsolatedAsyncioTestCase):
+    """An .m3u anywhere in the music folder is a playlist, whichever computer wrote its paths."""
+
+    async def test_playlists_in_the_music_folder(self):
+        songs = ["Blur/Parklife/01 Girls & Boys.mp3", "Blur/Parklife/02 Tracy Jacks.mp3",
+                 "Blur/Leisure/01 Intro.mp3", "Pulp/Different Class/01 Intro.mp3",
+                 unicodedata.normalize("NFD", "한강/밤.mp3")]
+        lists = {
+            "Lists/Road.m3u": "\ufeff#EXTM3U\r\n#EXTINF:290,Blur - Girls & Boys\r\n"
+                              "/Users/me/Music/Blur/Parklife/01 Girls & Boys.mp3\r\n"
+                              "C:\\Music\\PULP\\Different Class\\01 Intro.mp3\r\n"
+                              "Blur/Leisure/01 Intro.mp3\r\n01 Intro.mp3\r\nGone/Song.mp3\r\n한강/밤.mp3\r\n",
+            "Blur/Parklife/Side A.M3U8": "02 Tracy Jacks.mp3\n../Leisure/01 Intro.mp3\n",
+            "Blur/Parklife/Parklife.cue": "",
+        }
+        d = tempfile.mkdtemp()
+        for name, text in lists.items():
+            os.makedirs(os.path.dirname(os.path.join(d, name)), exist_ok=True)
+            with open(os.path.join(d, name), "w", encoding="utf-8", newline="") as f:
+                f.write(text)
+
+        class Mpd:
+            async def call(self, name, *args):
+                if name == "listallinfo":
+                    return [("file", f) for f in songs] + [("playlist", p) for p in lists]
+                if name == "listplaylists":
+                    return [("playlist", "Drive")]
+                return []
+
+        class NoApp:
+            t = Translator("en")
+            state = State(lambda snap: None)
+
+        app = NoApp()
+        app.music = Music(Mpd(), app.state, tempfile.mkdtemp(), music_dir=d)
+        await app.music.load_library()
+        pages = Pages(app)
+
+        async def opened(key):
+            built = await pages.build((await pages.activate("/music/playlists", key))["push"])
+            return built["title"], [i["title"] for i in built["items"]]
+
+        listed = (await pages.build("/music/playlists"))["items"]
+        self.assertEqual([i["title"] for i in listed], ["Favorites", "Drive", "Road", "Side A"])
+        self.assertEqual(await opened("p:Blur/Parklife/Side A.M3U8"), ("Side A", ["02 Tracy Jacks", "01 Intro"]))
+        road = await app.music.playlist_songs("Lists/Road.m3u")
+        self.assertEqual([s["file"] for s in road], [songs[0], songs[3], songs[2], songs[4]],
+                         "the bare 01 Intro.mp3 could be either album's, and Gone is not here")
 
 
 class NowPlayingTest(unittest.IsolatedAsyncioTestCase):

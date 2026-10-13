@@ -13,8 +13,9 @@ from .util import matches, sort_key, spawn
 log = logging.getLogger("isopod.music")
 
 LYRIC_EXTS = (".lrc", ".txt")
+PLAYLIST_EXTS = (".m3u", ".m3u8")
 STREAM_PREFIXES = ("http://", "https://", "hls+http://", "hls+https://")
-FAVORITES = "Favorites"
+FAVORITES = "Favorites.m3u"
 
 
 def _int(value, default=0):
@@ -33,6 +34,20 @@ def _float(value, default=0.0):
 
 def _fold(name):
     return unicodedata.normalize("NFC", name).casefold()
+
+
+def _tails(files):
+    """Each song under every ending of its path, so that a playlist written on another
+    computer finds it by as much of the path as the two share. An ending that two songs
+    share finds neither."""
+    tails = {}
+    for file in files:
+        parts = _fold(file).split("/")
+        for i in range(1, len(parts)):
+            tail = "/".join(parts[i:])
+            tails[tail] = None if tail in tails else file
+    tails.update((_fold(file), file) for file in files)
+    return tails
 
 
 def stream_urls(url):
@@ -76,8 +91,10 @@ class Music:
         self.station = None
         self.songs = []
         self.favorites = []
+        self.playlist_files = []
         self.updating = False
         self._by_file = {}
+        self._tails = {}
         self._elapsed = (0.0, time.monotonic())
         self._no_art = set()
         self._listeners = []
@@ -97,8 +114,6 @@ class Music:
             self._rescan_soon()
         if subsystems & {"reconnect", "database"}:
             await self.load_library()
-        if subsystems & {"reconnect", "stored_playlist"}:
-            await self.load_favorites()
         if subsystems & {"reconnect", "update"}:
             status = await self._status()
             self.updating = "updating_db" in status
@@ -114,16 +129,18 @@ class Music:
         recs = records(pairs, start_keys=("file", "directory", "playlist"))
         self.songs = [Song.from_mpd(r) for r in recs if "file" in r]
         self._by_file = {s["file"]: s for s in self.songs}
+        self._tails = _tails(self._by_file)
+        self.playlist_files = [r["playlist"] for r in recs
+                               if r.get("playlist", "").lower().endswith(PLAYLIST_EXTS)]
+        self.load_favorites()
         for fn in self._listeners:
             fn()
 
-    async def load_favorites(self):
-        """The favourites are a playlist MPD keeps, in the order they were added. There is
-        none until the first song is added."""
-        try:
-            favorites = values(await self.mpd.call("listplaylist", FAVORITES), "file")
-        except MPDError:
-            favorites = []
+    def load_favorites(self):
+        """The favourites are Favorites.m3u in the music folder, a playlist like the others
+        there, so they go wherever the music is copied. There is none until the first song
+        is added."""
+        favorites = [s["file"] for s in self._playlist_file_songs(FAVORITES)]
         if favorites == self.favorites:
             return
         self.favorites = favorites
@@ -132,12 +149,18 @@ class Music:
         self.favorites_changed()
 
     async def set_favorite(self, file, on):
+        """A line that finds no song, one on a card that is out, stays for when it is back."""
+        lines = [line for line in self._playlist_lines(FAVORITES) if self._playlist_song(line) != file]
         if on:
-            await self.mpd.call("playlistadd", FAVORITES, file)
-        else:
-            await self.mpd.call_list([("playlistdelete", FAVORITES, str(i))
-                                      for i, f in reversed(list(enumerate(self.favorites))) if f == file])
-        await self.load_favorites()
+            lines.append(file)
+        path = os.path.join(self.music_dir, FAVORITES)
+        try:
+            with open(path + ".tmp", "w", encoding="utf-8") as f:
+                f.writelines(line + "\n" for line in lines)
+            os.replace(path + ".tmp", path)
+        except OSError as e:
+            log.warning("favorites not saved: %s", e)
+        self.load_favorites()
 
     def _rescan_soon(self):
         """MPD scans nothing when it starts, so songs copied while isoPod was off would stay
@@ -335,12 +358,44 @@ class Music:
         return [self._by_file[f] for f in self.favorites if f in self._by_file]
 
     async def playlists(self):
+        """(title, name) of the playlists MPD keeps and of every .m3u in the music folder,
+        which goes by its path there."""
         pairs = await self.mpd.call("listplaylists")
-        return sorted((p for p in values(pairs, "playlist") if p != FAVORITES), key=sort_key)
+        names = values(pairs, "playlist") + [p for p in self.playlist_files if p != FAVORITES]
+        return sorted(((self.playlist_title(n), n) for n in names), key=lambda p: sort_key(p[0]))
+
+    def playlist_title(self, name):
+        if name not in self.playlist_files:
+            return name
+        return unicodedata.normalize("NFC", os.path.splitext(os.path.basename(name))[0])
 
     async def playlist_songs(self, name):
+        if name in self.playlist_files:
+            return self._playlist_file_songs(name)
         pairs = await self.mpd.call("listplaylistinfo", name)
         return [Song.from_mpd(r) for r in records(pairs)]
+
+    def _playlist_lines(self, path):
+        try:
+            with open(os.path.join(self.music_dir, path), "rb") as f:
+                lines = map(str.strip, decode(f.read()).splitlines())
+        except OSError:
+            return []
+        return [line for line in lines if line and not line.startswith("#")]
+
+    def _playlist_song(self, line, folder=""):
+        """A line is a path from the playlist's own folder or from the music folder, or one
+        from the computer the playlist was made on."""
+        line = _fold(line.replace("\\", "/"))
+        parts = line.strip("/").split("/")
+        tries = [os.path.normpath(os.path.join(folder, line))]
+        tries += ["/".join(parts[i:]) for i in range(len(parts))]
+        return next(filter(None, map(self._tails.get, tries)), None)
+
+    def _playlist_file_songs(self, path):
+        folder = _fold(os.path.dirname(path))
+        files = (self._playlist_song(line, folder) for line in self._playlist_lines(path))
+        return [self._by_file[f] for f in files if f]
 
     async def queue(self):
         pairs = await self.mpd.call("playlistinfo")

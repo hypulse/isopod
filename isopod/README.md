@@ -16,7 +16,13 @@ replaces the front end with a small shell built around your music.
   and the one after it stand under the cover.
 - **Favorites**: X on a song, in a list or in Now Playing, makes it a favorite or no longer
   one. Favorites is the first of the playlists, and a star marks a favorite wherever it is
-  listed.
+  listed. They are kept as `Favorites.m3u` in the music folder, a playlist like any other,
+  to be copied off with the music or edited on a computer.
+- **Playlists** are the `.m3u` files in the music folder, wherever they lie in it, so a
+  playlist comes over the cable as its songs do. A line names a song by its path from the
+  playlist's own folder or from the music folder. A playlist exported on a computer, with
+  that computer's paths, finds the songs that sit in the same folders under the same names
+  here.
 - **Radio**: stations from [Radio Browser](https://www.radio-browser.info), under Favorites,
   Popular, Genres, Countries and Search. A list is fetched the first time it is opened and
   kept on the card with its logos. Opened a week or more later it shows at once as it was,

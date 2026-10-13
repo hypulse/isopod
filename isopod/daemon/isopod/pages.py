@@ -295,7 +295,7 @@ class Pages:
             return page(path, t("genres"), items, empty=self._empty_music())
         if kind == "playlists":
             items = [item("favorites", t("favorites"))]
-            items += [item("p:" + p, p) for p in await m.playlists()]
+            items += [item("p:" + name, title) for title, name in await m.playlists()]
             return page(path, t("playlists"), items)
         if kind == "queue":
             songs = await m.queue()
@@ -308,7 +308,8 @@ class Pages:
         if songs is None:
             return page(path, "", [])
         titles = {"songs": t("songs"), "album": rest[-1] if len(rest) > 2 else "",
-                  "artist": rest[1] if len(rest) > 1 else "", "genre": rest[-1], "playlist": rest[-1],
+                  "artist": rest[1] if len(rest) > 1 else "", "genre": rest[-1],
+                  "playlist": m.playlist_title(rest[-1]),
                   "favorites": t("favorites")}
         nothing = (empty("star", t("no_favorites_title"), t("no_favorites_text"))
                    if kind == "favorites" else self._empty_music())

@@ -177,8 +177,8 @@ class MPD:
                     await conn.connect()
                     delay = 0.5
                     await on_change({"reconnect"})
-                pairs = await conn.command("idle", "database", "update", "stored_playlist",
-                                           "playlist", "player", "mixer", "options")
+                pairs = await conn.command("idle", "database", "update", "playlist", "player", "mixer",
+                                           "options")
                 await on_change(set(values(pairs, "changed")))
             except (OSError, ConnectionError, MPDError, asyncio.IncompleteReadError) as e:
                 log.warning("mpd idle connection lost: %s", e)
