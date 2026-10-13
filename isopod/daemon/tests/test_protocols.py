@@ -845,6 +845,35 @@ class AppsTest(unittest.IsolatedAsyncioTestCase):
             "systemctl stop isopod-a-2.service"])
 
 
+    def _on_the_device(self, answers):
+        """Apps as the device runs them, with systemd saying of each unit what `answers` holds."""
+        module, events = sys.modules[Apps.__module__], FakeEvents()
+
+        async def run(*args, **kwargs):
+            return 0, answers.pop(0) if len(answers) > 1 else answers[0], ""
+        self.addCleanup(setattr, module, "run", module.run)
+        module.run = run
+        events.failed = []
+        events.app_failed = events.failed.append
+        apps = Apps(State(lambda snap: None), events, {}, runner="systemd")
+        for title, shown in (("book", True), ("film", False)):
+            apps.running[title] = {"title": title, "unit": "isopod-" + title, "workspace": 2, "frozen": False,
+                                   "shown": shown}
+        return apps, events
+
+    async def test_a_book_left_at_once_did_start_and_only_an_app_without_a_window_failed(self):
+        apps, events = self._on_the_device(["inactive"])
+        await asyncio.gather(apps._watch_start("book", "isopod-book"), apps._watch_start("film", "isopod-film"))
+        self.assertEqual((events.failed, apps.running), (["film"], {}))
+
+    async def test_an_app_whose_window_closed_is_looked_at_again_until_it_has_ended(self):
+        apps, _ = self._on_the_device(["active", "active", "inactive"])
+        await apps._reap("book", waits=(0, 0))
+        self.assertIn("book", apps.running, "still ending at both looks")
+        await apps._reap("book", waits=(0, 0))
+        self.assertNotIn("book", apps.running)
+
+
 class LyricsTest(unittest.TestCase):
     def test_synced_lrc(self):
         lines, times = parse_lrc("[ar:X]\n[offset:+500]\n[00:00.00]\n[00:12.50]Two\n[00:05.00][00:30.00]One and again\n")

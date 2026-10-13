@@ -335,7 +335,7 @@ class Apps:
             env.update(spec.setup() or {})
         app = {"title": title, "unit": unit, "workspace": workspace, "frozen": False, "app_id": app_id,
                "media": spec.pauses_music, "args": list(extra_args), "awake": spec.awake,
-               "control": spec.control, "playing": True, "used_at": time.monotonic()}
+               "control": spec.control, "playing": True, "shown": False, "used_at": time.monotonic()}
         self.running[spec.key] = app
         if spec.control and not self.sim:
             spawn(self._watch_playback(spec.key, app))
@@ -369,16 +369,19 @@ class Apps:
         return True
 
     async def _watch_start(self, key, unit):
-        """An app that dies before it shows a window would leave an empty workspace in front."""
+        """An app that dies before it shows a window would leave an empty workspace in front.
+        One that showed its window and was then left, a book closed again at once, did
+        start: it is put away without a word."""
         for _ in range(10):
             await asyncio.sleep(1)
             app = self.running.get(key)
             if not app or app["unit"] != unit:
                 return
             if not await self._alive(app):
-                log.warning("%s exited during start", unit)
-                self.events.app_failed(app["title"])
-                await self._reap(key, delay=0)
+                if not app["shown"]:
+                    log.warning("%s exited during start", unit)
+                    self.events.app_failed(app["title"])
+                await self._reap(key, waits=(0,))
                 return
 
     async def home(self):
@@ -447,7 +450,11 @@ class Apps:
                     continue
                 change = event.get("change")
                 if change == "new":
-                    spawn(self._adopt(event.get("container") or {}))
+                    con = event.get("container") or {}
+                    for app in self.running.values():
+                        if app["app_id"] == con.get("app_id"):
+                            app["shown"] = True
+                    spawn(self._adopt(con))
                 elif change == "close":
                     # An app may name its own windows, so any close is a reason to look
                     # at every app.
@@ -462,13 +469,21 @@ class Apps:
         if app_id.startswith("isopod-") or "id" not in con or not self.running:
             return
         latest = max(self.running.values(), key=lambda a: a["used_at"])
+        latest["shown"] = True
         await run("swaymsg", f"[con_id={con['id']}]", "move", "container", "to", "workspace",
                   "number", str(latest["workspace"]))
 
-    async def _reap(self, key, delay=0.5):
-        await asyncio.sleep(delay)
+    async def _reap(self, key, waits=(0.5, 1, 2)):
+        """Put away an app that has gone. Its window closes a moment before the app has
+        ended, so one look may come too early."""
         app = self.running.get(key)
-        if not app or await self._alive(app):
+        for wait in waits:
+            await asyncio.sleep(wait)
+            if not app or self.running.get(key) is not app:
+                return
+            if not await self._alive(app):
+                break
+        else:
             return
         self.running.pop(key, None)
         if self.front == key:
