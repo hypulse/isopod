@@ -294,7 +294,8 @@ static void draw_reflection(const char *path, const char *fallback, int radius, 
 
 /* Now Playing: the cover over its reflection, what the song is, and under them the line
  * being sung with the one after it. A song without timed words leaves those two lines
- * empty, so nothing moves from one song to the next. */
+ * empty, and the line about the song, which comes a moment after the song does, has its
+ * place kept, so nothing moves from one song to the next. */
 static void draw_nowplaying(Page *p, int x)
 {
     Player *pl = &app.status.player;
@@ -331,7 +332,7 @@ static void draw_nowplaying(Page *p, int x)
     bool has_note = p->note && *p->note;
     bool two = has_artist && radio && wrap_count(FONT_REGULAR, FONT_NP_LINE, pl->artist, tw, 2) > 1;
     int artist_h = has_artist ? (two ? 64 : 32) : 0;
-    int block = title_lines * 38 + 8 + artist_h + (has_album ? 32 : 0) + (has_note ? 34 : 0);
+    int block = title_lines * 38 + 8 + artist_h + (has_album ? 32 : 0) + 34;
     int ty = ay + art / 2 - block / 2;
     ty += draw_text_wrap(FONT_BOLD, FONT_NP_TITLE, pl->title, tx, ty, tw, 38, 2, C_TEXT) * 38 + 8;
     if (two)
