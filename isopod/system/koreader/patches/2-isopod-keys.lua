@@ -3,9 +3,10 @@
 --   left/right, up/down  turn the page     A  the next page, and selects in a menu
 --   B  back; from the page, leave the book, which keeps its place
 --   X  KOReader's menu                     Y  the text: its size, spacing and the like
+--   Select  start selecting text, as "Start text selection" in the menu does
 --
--- Select, Start and the four shoulder buttons do nothing here. Home, the volume keys
--- and the power key are isopodd's, which also has Start play or pause the music.
+-- Start and the four shoulder buttons do nothing here. Home, the volume keys and the
+-- power key are isopodd's, which also has Start play or pause the music.
 local Device = require("device")
 local Gamepad = require("device/sdl/gamepad")
 
@@ -17,12 +18,13 @@ Device.hasSymKey = no
 Device.useDPadAsActionKeys = no
 
 -- SDL numbers the face buttons by where they sit: 0 at the bottom (B), 1 on the
--- right (A), 2 X and 3 Y. A button left out of the table does nothing.
+-- right (A), 2 X and 3 Y; 4 is Select. A button left out of the table does nothing.
 Gamepad.button_key_names = {
     [0] = "Back",
     [1] = "Press",
     [2] = "Menu",
     [3] = "AA",
+    [4] = "Select",
     [11] = "Up",
     [12] = "Down",
     [13] = "Left",
@@ -38,6 +40,11 @@ local function also(module, change)
         change(self.key_events)
     end
 end
+
+-- Select is a key name of isoPod's own, which nothing else in KOReader answers.
+also("apps/reader/modules/readerkeyselection", function(keys)
+    keys.StartHighlightIndicator = { { "Select" } }
+end)
 
 -- KOReader opens the text settings on Press as well; here Press is the next page.
 also("apps/reader/modules/readerconfig", function(keys)

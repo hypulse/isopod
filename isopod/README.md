@@ -35,7 +35,8 @@ replaces the front end with a small shell built around your music.
 - **Books** from `/storage/books`, read in [KOReader](https://koreader.rocks): EPUB, PDF,
   comics and the rest it opens. isoPod lists them, KOReader shows the one you pick with
   isoPod's buttons and a menu cut down to reading, and a book opens again at the page it
-  was left on.
+  was left on. KOReader's progress sync is kept, for a page shared with another reader
+  through a sync server.
 - **Bluetooth** headphones connect from one list in Settings, and Bluetooth left on is on
   again after a restart.
 - **Headphones**, wired or Bluetooth, take the sound when they arrive; with both, the one
@@ -104,8 +105,10 @@ otherwise, and a paused video lets the screen go dark like any list.
 
 In a book ←, → and A turn the page, as ↑ and ↓ do; B leaves, and the page is remembered.
 X opens KOReader's menu (contents and bookmarks, type, the screen, tools, the book) and Y
-the text's size and spacing, where the D-pad moves, A chooses and B goes back. Start plays
-or pauses the music behind the page. Select and the four shoulder buttons do nothing there.
+the text's size and spacing, where the D-pad moves, A chooses and B goes back. Select
+starts a text selection: move the cross, A at its first word and A again at its last, then
+highlight, note, copy, translate or search. Start plays or pauses the music behind the
+page. The four shoulder buttons do nothing there.
 
 ## How it fits together
 

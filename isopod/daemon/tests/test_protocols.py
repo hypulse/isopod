@@ -1296,34 +1296,43 @@ class BooksTest(unittest.IsolatedAsyncioTestCase):
 
     def test_koreader_gets_its_buttons_and_menu_at_every_start_and_its_settings_once(self):
         home = os.path.join(tempfile.mkdtemp(), "koreader")
-        prepare_koreader(self.SYSTEM, "/storage/books", home)
+        prepare_koreader(self.SYSTEM, "/storage/books", "ko_KR", home)
         settings = os.path.join(home, "settings.reader.lua")
         ours = [os.path.join(home, "patches", "2-isopod-keys.lua"),
                 os.path.join(home, "settings", "reader_menu_order.lua")]
         with open(settings) as f:
             first = f.read()
         for line in ('["home_dir"] = "/storage/books"', '["end_document_action"] = "nothing"',
-                     '["newsdownloader"] = true', '["hotkeys"] = true'):
+                     '["language"] = "ko_KR"', '["newsdownloader"] = true', '["hotkeys"] = true'):
             self.assertIn(line, first)
-        self.assertNotIn('["statistics"]', first, "a book's status page counts the reading")
-        for path in [settings] + ours:
+        for kept in ("statistics", "kosync"):
+            self.assertNotIn(f'["{kept}"]', first, "the book's status page, and the page kept with another reader")
+        kept = 'return {\n    ["font_size"] = 24,\n}\n'
+        for path in ours:
             with open(path, "w") as f:
                 f.write("-- changed")
-        prepare_koreader(self.SYSTEM, "/storage/books", home)
+        with open(settings, "w") as f:
+            f.write(kept)
+        prepare_koreader(self.SYSTEM, "/storage/books", "ko_KR", home)
         with open(settings) as f:
-            self.assertEqual(f.read(), "-- changed", "KOReader's own from then on")
+            self.assertEqual(f.read(), 'return {\n    ["language"] = "ko_KR",\n    ["font_size"] = 24,\n}\n',
+                             "KOReader's own from then on, but for the language")
         for path in ours:
             with open(path) as f:
                 self.assertNotEqual(f.read(), "-- changed")
+        prepare_koreader(self.SYSTEM, "/storage/books", "en", home)
+        with open(settings) as f:
+            self.assertEqual(f.read(), 'return {\n    ["language"] = "en",\n    ["font_size"] = 24,\n}\n')
 
-    def test_the_shoulders_select_start_and_home_are_no_buttons_of_koreaders(self):
+    def test_the_shoulders_start_and_home_are_no_buttons_of_koreaders(self):
         with open(os.path.join(self.SYSTEM, "koreader", "patches", "2-isopod-keys.lua")) as f:
             patch = f.read()
         table = patch.split("Gamepad.button_key_names = {")[1].split("}")[0]
         keys = {int(n): name for n, name in re.findall(r'\[(\d+)\] = "(\w+)"', table)}
         # SDL: 0 south (B), 1 east (A), 2 X, 3 Y, 4 Select, 5 Home, 6 Start, 9 L1, 10 R1, 11-14 the D-pad
-        self.assertEqual(keys, {0: "Back", 1: "Press", 2: "Menu", 3: "AA",
+        self.assertEqual(keys, {0: "Back", 1: "Press", 2: "Menu", 3: "AA", 4: "Select",
                                 11: "Up", 12: "Down", 13: "Left", 14: "Right"})
+        self.assertIn('keys.StartHighlightIndicator = { { "Select" } }', patch)
         self.assertIn("Gamepad.axis_key_names = {}", patch, "L2 and R2 are axes to SDL")
 
 

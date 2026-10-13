@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import signal
 import time
@@ -88,7 +89,7 @@ class AppSpec:
         self.needs = needs
         self.pauses_music = pauses_music
         self.env = env or {}
-        self.setup = setup  # run before each start; what it returns joins the environment
+        self.setup = setup  # run before each start
         self.awake = awake
         self.control = control  # mpv's JSON IPC socket, to pause it when headphones go
 
@@ -97,23 +98,32 @@ class AppSpec:
 
 
 KOREADER_HOME = "/storage/.config/koreader"
-# Every plugin KOReader 2026.07.1 ships but its reading statistics, which a book's status
-# page shows: news, sync, cloud storage and the like, and the cover browser, which greets
-# a first start with a notice.
+# Every plugin KOReader 2026.07.1 ships but two: its reading statistics, which a book's
+# status page shows, and kosync, which keeps the page with another reader's through a sync
+# server once an account is given. Off are news, cloud storage and the like, and the cover
+# browser, which greets a first start with a notice.
 KOREADER_PLUGINS = (
     "archiveviewer", "autodim", "autostandby", "autosuspend", "autoturn", "autowarmth", "batterystat",
     "bookshortcuts", "calibre", "cloudstorage", "coverbrowser", "coverimage", "docsettingtweak", "exporter",
-    "externalkeyboard", "gestures", "hello", "hotkeys", "httpinspector", "japanese", "keepalive", "kosync",
+    "externalkeyboard", "gestures", "hello", "hotkeys", "httpinspector", "japanese", "keepalive",
     "movetoarchive", "newsdownloader", "opds", "perceptionexpander", "profiles", "qrclipboard", "readtimer",
     "systemstat", "terminal", "texteditor", "vocabbuilder", "wallabag")
-KOREADER_DEFAULTS = """-- Written once by isoPod; KOReader owns this file from now on.
+# keyboard_layouts is written the way KOReader kept it until 2021: a first start runs every
+# migration it has, and the one from then empties the list as it is written today.
+KOREADER_DEFAULTS = """-- Written once by isoPod; KOReader owns this file from now on, but for the language.
 return {
     ["back_in_reader"] = "default",
     ["back_to_exit"] = "always",
     ["color_rendering"] = true,
     ["document_metadata_folder"] = "dir",
     ["end_document_action"] = "nothing",
+    ["highlight_action_on_single_word"] = true,
     ["home_dir"] = "%(books)s",
+    ["keyboard_layouts"] = {
+        ["en"] = true,
+        ["ko_KR"] = true,
+    },
+    ["language"] = "%(language)s",
     ["lastdir"] = "%(books)s",
     ["plugins_disabled"] = {
 %(plugins)s    },
@@ -123,10 +133,16 @@ return {
 """
 
 
-def prepare_koreader(data_dir, books_dir, home=KOREADER_HOME):
-    """isoPod's buttons and menu, at every start, and KOReader's first settings, once: B
-    leaves a book at once, a book's page is kept here and not in a folder beside the book,
-    and nothing pops up at the first start or at a book's end."""
+KOREADER_LANGUAGE = re.compile(r'^    \["language"\] = "[^"]*",\n', re.M)
+
+
+def prepare_koreader(data_dir, books_dir, language, home=KOREADER_HOME):
+    """isoPod's buttons, menu and language, at every start, and KOReader's first settings,
+    once: B leaves a book at once, a book's page is kept here and not in a folder beside
+    the book, nothing pops up at the first start or at a book's end, one selected word
+    gets the same choices as several (there is no dictionary to look it up in), and the
+    on-screen keyboard changes between Latin and Hangul. The language is a setting of
+    KOReader's: its translator, keyboard and plugins read it there."""
     try:
         for part in ("patches", "settings"):
             os.makedirs(os.path.join(home, part), exist_ok=True)
@@ -137,16 +153,25 @@ def prepare_koreader(data_dir, books_dir, home=KOREADER_HOME):
         if not os.path.exists(settings):
             plugins = "".join(f'        ["{name}"] = true,\n' for name in KOREADER_PLUGINS)
             with open(settings, "w") as f:
-                f.write(KOREADER_DEFAULTS % {"books": books_dir, "plugins": plugins})
+                f.write(KOREADER_DEFAULTS % {"books": books_dir, "plugins": plugins, "language": language})
+            return
+        with open(settings) as f:
+            was = f.read()
+        line = f'    ["language"] = "{language}",\n'
+        now, found = KOREADER_LANGUAGE.subn(line, was, count=1)
+        if not found:
+            now = was.replace("return {\n", "return {\n" + line, 1)
+        if now != was:
+            with open(settings + ".part", "w") as f:
+                f.write(now)
+            os.replace(settings + ".part", settings)
     except OSError as e:
         log.warning("could not prepare KOReader: %s", e)
 
 
 def catalog(data_dir, books_dir, lang, sim=False, run_dir="/run/isopod"):
     def reader():
-        prepare_koreader(data_dir, books_dir)
-        # KOReader speaks isoPod's language until it is given one of its own.
-        return {"LANGUAGE": "ko_KR" if lang() == "ko" else "en"}
+        prepare_koreader(data_dir, books_dir, "ko_KR" if lang() == "ko" else "en")
 
     specs = {
         # DISABLE_TOUCH: there is no touch screen, so KOReader is worked by its keys alone.
@@ -332,7 +357,7 @@ class Apps:
         env = {**self.env, **spec.env, "SDL_VIDEO_WAYLAND_WMCLASS": app_id, "SDL_VIDEO_X11_WMCLASS": app_id,
                "SDL_APP_ID": app_id}
         if spec.setup and not self.sim:
-            env.update(spec.setup() or {})
+            spec.setup()
         app = {"title": title, "unit": unit, "workspace": workspace, "frozen": False, "app_id": app_id,
                "media": spec.pauses_music, "args": list(extra_args), "awake": spec.awake,
                "control": spec.control, "playing": True, "shown": False, "used_at": time.monotonic()}
