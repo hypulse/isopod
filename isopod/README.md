@@ -111,10 +111,11 @@ otherwise, and a paused video lets the screen go dark like any list.
 
 In a book ←, → and A turn the page, as ↑ and ↓ do; B leaves, and the page is remembered.
 X opens KOReader's menu (contents and bookmarks, type, the screen, tools, the book) and Y
-the text's size and spacing, where the D-pad moves, A chooses and B goes back. Select
+the text's size and spacing, where the D-pad moves, A chooses and B goes back; under the
+menu's icons and in a list, ← and → turn its pages where it has more than one. Select
 starts a text selection: move the cross, A at its first word and A again at its last, then
-highlight, note, copy, translate or search. Start plays or pauses the music behind the
-page. The four shoulder buttons do nothing there.
+highlight, note, copy, translate or search; Select again before that gives it up. Start
+plays or pauses the music behind the page. The four shoulder buttons do nothing there.
 
 ## How it fits together
 

@@ -1402,7 +1402,7 @@ class BooksTest(unittest.IsolatedAsyncioTestCase):
         # SDL: 0 south (B), 1 east (A), 2 X, 3 Y, 4 Select, 5 Home, 6 Start, 9 L1, 10 R1, 11-14 the D-pad
         self.assertEqual(keys, {0: "Back", 1: "Press", 2: "Menu", 3: "AA", 4: "Select",
                                 11: "Up", 12: "Down", 13: "Left", 14: "Right"})
-        self.assertIn('keys.StartHighlightIndicator = { { "Select" } }', patch)
+        self.assertIn('keys.ToggleHighlightIndicator = { { "Select" } }', patch)
         self.assertIn("Gamepad.axis_key_names = {}", patch, "L2 and R2 are axes to SDL")
 
 
