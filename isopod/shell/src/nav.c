@@ -243,8 +243,9 @@ static void page_fill(Page *p, cJSON *pg)
         d->header = json_bool(it, "header");
         d->spinner = json_bool(it, "spinner");
         d->signal = json_int(it, "signal", -1);
+        /* Cover Flow stands in its artists' order, a list in its titles'. */
         if (p->index)
-            index_letter(d->title, d->letter);
+            index_letter(p->style == STYLE_COVERFLOW ? d->subtitle : d->title, d->letter);
     }
     p->loaded = true;
 
@@ -665,8 +666,8 @@ static void slider_key(Page *p, const char *key)
     ipc_request(req, NULL, NULL);
 }
 
-/* Cover Flow: left and right glide through albums, A flips the album over to its songs
- * and B flips it back. */
+/* Cover Flow: left and right glide through albums, L1 and R1 to the artists of the letter
+ * before or after, A flips the album over to its songs and B flips it back. */
 static void open_card(Page *p)
 {
     Item *it = &p->items[p->sel];
@@ -702,6 +703,8 @@ static void coverflow_key(Page *p, const char *key, bool repeat)
     if (step && p->count) {
         int s = p->sel + step;
         p->sel = s < 0 ? 0 : s >= p->count ? p->count - 1 : s;
+    } else if (!strcmp(key, "pageup") || !strcmp(key, "pagedown")) {
+        jump_letter(p, key[4] == 'u' ? -1 : 1);
     } else if (!strcmp(key, "confirm") && !repeat && p->count) {
         open_card(p);
     } else if (!strcmp(key, "back") && !repeat) {

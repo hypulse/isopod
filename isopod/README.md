@@ -90,7 +90,7 @@ Every screen is a list, and every list works the same way.
 | Y | Now Playing |
 | Start | Play or pause |
 | Select | Control Center |
-| L1, R1 | A page up or down in a list |
+| L1, R1 | A page up or down in a list; in Cover Flow, which stands by artist and then by album, the artists of the letter before or after |
 | L2, R2 | Nothing |
 | Home | Home screen; from an app, pause the app and come home; on the home screen, back to that app |
 | Volume | Volume, always |

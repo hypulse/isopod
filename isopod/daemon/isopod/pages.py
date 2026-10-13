@@ -251,7 +251,7 @@ class Pages:
                           link="/music/album/" + enc(artist, album))
                      for i, ((artist, album), file) in enumerate(albums)]
             self._prefetch_art(path, [f for _, f in albums])
-            return page(path, t("cover_flow"), items, style="coverflow", live=True,
+            return page(path, t("cover_flow"), items, style="coverflow", live=True, index=True,
                         empty=self._empty_music())
         if kind == "search" and len(rest) >= 2:
             artists, albums, songs = m.search(rest[1])
