@@ -201,6 +201,7 @@ class Apps:
         self.sim = self.runner == "sim"
         self.running = {}
         self.front = None
+        self.left = None  # the app Home was pressed in last
         self._lock = asyncio.Lock()
 
     async def start(self):
@@ -420,6 +421,7 @@ class Apps:
                 if not app["frozen"]:
                     await self._park(app)
                 app["used_at"] = time.monotonic()
+            self.left = key
         self.front = None
         if not self.sim:
             await run("swaymsg", "workspace", "number", str(SHELL_WORKSPACE))

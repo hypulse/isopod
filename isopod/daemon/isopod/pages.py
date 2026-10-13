@@ -172,6 +172,11 @@ class Pages:
         if key.startswith("app:"):
             await self.app.resume_app(key[4:])
             return {"none": True}
+        if key == "home":
+            # Home pressed on the home screen: back to the app it was last pressed in.
+            if self.app.apps.left in self.app.apps.running:
+                await self.app.resume_app(self.app.apps.left)
+            return {"none": True}
         return {"push": "/" + key}
 
     async def _alt_root(self, path, rest, key):

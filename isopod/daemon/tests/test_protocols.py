@@ -1285,6 +1285,25 @@ class BooksTest(unittest.IsolatedAsyncioTestCase):
         await self.app.pages.activate("/books/Classics", "f:Emma.epub")
         self.assertEqual(apps.running["koreader"]["args"], [os.path.join(self.books, "Classics", "Emma.epub")])
 
+    async def test_home_on_the_home_screen_goes_back_to_the_app_it_was_last_pressed_in(self):
+        apps, sent = self.app.apps, []
+        self.app.server.broadcast = lambda msg: msg["event"] in ("key", "present") and sent.append(msg)
+        await self.app.pages.activate("/", "home")
+        self.assertIsNone(apps.front, "Home was pressed in no app yet")
+        await self.app.launch(self.app.catalog["video"], "film", ["film.mp4"])
+        await self.app.key("home")
+        await self.app.pages.activate("/books", "f:데미안.epub")
+        await self.app.key("home")
+        self.assertEqual((apps.front, sent[-1]), (None, {"event": "present", "do": {"home": True}}))
+        await self.app.key("home")
+        self.assertEqual(sent[-1], {"event": "key", "key": "home"}, "the shell knows where it is")
+        await self.app.pages.activate("/", "home")
+        self.assertEqual(apps.front, "koreader")
+        await self.app.key("home")
+        await apps.close("koreader")
+        await self.app.pages.activate("/", "home")
+        self.assertEqual((apps.front, sorted(apps.running)), (None, ["video"]), "that app is closed")
+
     async def test_start_is_the_music_behind_a_book_and_the_rest_is_koreaders(self):
         await self.app.pages.activate("/books", "f:데미안.epub")
         before = self.app.state.get("volume")["level"]

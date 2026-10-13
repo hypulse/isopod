@@ -521,6 +521,8 @@ void nav_apply(cJSON *act, const char *hint)
     }
     if (json_bool(act, "back"))
         nav_pop();
+    if (json_bool(act, "home"))
+        nav_home();
     char *push = json_str(act, "push");
     if (push) {
         nav_push(push, hint);
@@ -849,7 +851,11 @@ void nav_key(const char *key, bool repeat)
 {
     np_skip = 0;
     if (!strcmp(key, "home")) {
-        nav_home();
+        /* Home on the home screen goes back to the app it was last pressed in. */
+        if (app.depth == 1 && !app.overlay && !app.sheet.active && !app.keyboard.active)
+            send_simple("activate", "/", "home");
+        else
+            nav_home();
         app.dirty = true;
         return;
     }

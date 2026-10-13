@@ -204,10 +204,13 @@ class App:
             return
         self.power.activity()
         if name == "home":
-            # Home is always the home screen: the app in front waits, the shell goes to its root.
+            # From an app Home is the home screen: the app waits, the shell goes to its root.
+            # In the shell the press is the shell's, which knows whether it is home already.
             if self.apps.front:
                 await self.apps.home()
-            self.server.broadcast({"event": "key", "key": "home"})
+                self.server.broadcast({"event": "present", "do": {"home": True}})
+            else:
+                self.server.broadcast({"event": "key", "key": "home"})
             return
         if self.apps.front:
             if self.apps.front_plays_media:
