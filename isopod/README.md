@@ -44,7 +44,8 @@ replaces the front end with a small shell built around your music.
   was left on. KOReader's progress sync is kept, for a page shared with another reader
   through a sync server.
 - **Bluetooth** headphones connect from one list in Settings, and Bluetooth left on is on
-  again after a restart.
+  again after a restart. A headset is told what is playing, so its own buttons pause and
+  play, and skip to the next song or the one before.
 - **Headphones**, wired or Bluetooth, take the sound when they arrive; with both, the one
   connected last plays. Unplugging or losing the one in use pauses music and videos before
   a note reaches the speaker.

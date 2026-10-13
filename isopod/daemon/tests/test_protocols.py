@@ -6,6 +6,7 @@ import re
 import sys
 import tempfile
 import time
+import types
 import unicodedata
 import unittest
 
@@ -1263,6 +1264,24 @@ class VideoTest(unittest.IsolatedAsyncioTestCase):
         await self.app.media("play")
         self.assertEqual((len(self.mpv.commands), self.toggled), (3, ["music"]), "a frozen film hears nothing")
 
+    async def test_a_headset_is_told_of_the_film_in_front_and_else_of_the_music(self):
+        told = []
+        self.app.bluetooth.set_playback = told.append
+        for state, status in (("play", "Playing"), ("pause", "Paused")):
+            self.app.state.update("player", state=state)
+            await asyncio.sleep(State.DEBOUNCE * 2)
+            self.assertEqual(told[-1], status)
+        film = self.watch()
+        self.app.playback_changed()
+        self.assertEqual(told[-1], "Playing", "the music is paused under a film that plays")
+        film["playing"] = False
+        self.app.playback_changed()
+        self.assertEqual(told[-1], "Paused")
+        self.app.apps.front = None
+        self.app.state.update("player", state="stop")
+        await asyncio.sleep(State.DEBOUNCE * 2)
+        self.assertEqual(told[-1], "Stopped")
+
     async def test_a_film_sent_to_the_back_is_paused_and_goes_on_when_it_returns(self):
         film = self.watch()
         await self.app.apps.home()
@@ -1703,6 +1722,17 @@ class BluetoothTest(unittest.IsolatedAsyncioTestCase):
     def connects(self):
         return [c for c in self.bluez.calls if c[0] == "connect"]
 
+    async def test_what_a_headsets_buttons_ask_goes_where_its_keys_go(self):
+        asked = []
+
+        async def media(action):
+            asked.append(action)
+        self.events.media = media
+        self.bluez.remote("next")
+        await asyncio.sleep(0.01)
+        self.bt.set_playback("Playing")
+        self.assertEqual((asked, self.bluez.playback), (["next"], "Playing"))
+
     async def test_only_named_headphones_and_controllers_are_offered(self):
         self.assertEqual([d.name for d in self.bt.other_devices()], ["AirPods Pro", "8BitDo Pro 2"])
         self.assertEqual(self.bt.my_devices(), [])
@@ -1869,6 +1899,47 @@ class BluezSignalsTest(unittest.TestCase):
         bluez._apply(dev, {"org.bluez.Device1": {"Connected": False}})
         bluez._apply(dev, {"org.bluez.Device1": {"Connected": True}})
         self.assertFalse(bluez.devices[dev].ready, "a new link starts without a stream")
+
+    def test_bluez_is_told_what_plays_once_a_change_and_calls_with_what_a_headset_asks(self):
+        player, sent, asked = "org.mpris.MediaPlayer2.Player", [], []
+
+        class Signal:
+            @classmethod
+            def new_signal(cls, *header):
+                signal = cls()
+                signal.header = header
+                return signal
+
+            def append_objects(self, signature, *body):
+                self.body = body
+
+        class Call:
+            type, no_reply = "call", False
+
+            def __init__(self, member, path="/isopod/player", interface=player):
+                self.member, self.path, self.interface = member, path, interface
+
+            def new_method_return(self):
+                return "answer to " + self.member
+
+        connection = types.SimpleNamespace(send=sent.append)
+        bluez = RavelBackend()
+        bluez._dbussy = types.SimpleNamespace(Message=Signal, DBUS=types.SimpleNamespace(
+            MESSAGE_TYPE_METHOD_CALL="call", HANDLER_RESULT_HANDLED="taken", HANDLER_RESULT_NOT_YET_HANDLED="left"))
+        bluez.bus = types.SimpleNamespace(connection=connection)
+        bluez.remote = asked.append
+        for status in ("Playing", "Playing", "Paused"):
+            bluez.set_playback(status)
+        self.assertEqual([(s.header, s.body) for s in sent], [
+            (("/isopod/player", "org.freedesktop.DBus.Properties", "PropertiesChanged"),
+             (player, {"PlaybackStatus": ("s", status)}, [])) for status in ("Playing", "Paused")])
+        del sent[:]
+        for member in ("Pause", "Next", "Previous", "Stop", "Play", "Seek"):
+            self.assertEqual(bluez._called(connection, Call(member), None), "taken")
+        self.assertEqual(asked, ["pause", "next", "prev", "pause", "play"])
+        self.assertEqual(len(sent), 6, "every call is answered, the ones not acted on too")
+        self.assertEqual(bluez._called(connection, Call("Play", path="/org/bluez/agent"), None), "left")
+        self.assertEqual(len(asked), 5)
 
     def test_a_device_without_a_name_shows_its_address(self):
         bluez, dev = RavelBackend(), "/org/bluez/hci0/dev_5C_F3_70_00_00_04"

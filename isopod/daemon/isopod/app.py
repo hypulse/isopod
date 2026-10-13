@@ -88,6 +88,7 @@ class App:
 
     def _state_changed(self, snapshot):
         self.server.broadcast({"event": "state", "state": snapshot})
+        self._tell_headset()
         playing = snapshot["player"]["state"]
         if playing != self._last_player_state:
             self._last_player_state = playing
@@ -151,8 +152,20 @@ class App:
         return self.power.screen_on
 
     def playback_changed(self):
-        """The video in front was paused or went on: the screen's hold changes with it."""
+        """The video in front was paused or went on: the screen's hold changes with it, and
+        so does what a headset is told."""
         self.power.poke()
+        self._tell_headset()
+
+    def _tell_headset(self):
+        """A headset picks what its buttons send by what it is told is going on. A video in
+        front speaks for itself there, and otherwise the music does."""
+        app = self.apps.running.get(self.apps.front)
+        if app and app["media"]:
+            status = "Playing" if app["playing"] else "Paused"
+        else:
+            status = {"play": "Playing", "pause": "Paused"}.get(self.state.get("player")["state"], "Stopped")
+        self.bluetooth.set_playback(status)
 
     def app_failed(self, title):
         self.toast(self.t("app_failed", name=title))

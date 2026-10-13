@@ -8,6 +8,9 @@ log = logging.getLogger("isopod.bluetooth")
 
 AUDIO_UUIDS = ("0000110b", "0000111e", "00001108", "0000110d")
 A2DP_SINK = "0000110b-0000-1000-8000-00805f9b34fb"
+PLAYER = "/isopod/player"
+MPRIS = "org.mpris.MediaPlayer2.Player"
+REMOTE = {"Play": "play", "Pause": "pause", "Stop": "pause", "Next": "next", "Previous": "prev"}
 
 
 @dataclasses.dataclass
@@ -56,9 +59,15 @@ class Backend:
         self.discovering = False
         self.address = ""
         self.listener = lambda kind, device, old: None
+        self.playback = "Stopped"
+        self.remote = lambda action: None
 
     def _emit(self, kind, device=None, old=None):
         self.listener(kind, device, old)
+
+    def set_playback(self, status):
+        """What a headset is told is going on: Playing, Paused or Stopped."""
+        self.playback = status
 
 
 def _unwrap(value):
@@ -82,6 +91,7 @@ class RavelBackend(Backend):
         self.listener = listener
         self._dbussy, self._ravel = dbussy, ravel
         self.bus = await ravel.system_bus_async(loop=asyncio.get_running_loop())
+        self.bus.connection.add_filter(self._called, None)
         self.adapter_path = None
 
         @ravel.signal(in_signature="oa{sa{sv}}")
@@ -152,6 +162,48 @@ class RavelBackend(Backend):
             self._emit("changed", dev, old)
         if "org.bluez.MediaTransport1" in interfaces:
             self._streaming(interfaces["org.bluez.MediaTransport1"].get("Device"))
+        if "org.bluez.Media1" in interfaces:
+            spawn(self._register_player(path))
+
+    async def _register_player(self, adapter):
+        """A headset asks what is playing and picks its commands by the answer: told nothing,
+        it takes the music for stopped and sends Play whatever is pressed on it. So BlueZ is
+        given a player to answer for, and passes on to it what the headset asks."""
+        told = self.playback
+        can = ("CanPlay", "CanPause", "CanGoNext", "CanGoPrevious", "CanControl")
+        try:
+            media = await self._iface(adapter, "org.bluez.Media1")
+            await media.RegisterPlayer(PLAYER, {"PlaybackStatus": ("s", told), "Identity": ("s", "isoPod"),
+                                                **{name: ("b", True) for name in can}})
+        except Exception as e:
+            if "AlreadyExists" not in str(e):
+                log.info("media player: %s", e)
+            return
+        if self.playback != told:
+            self._tell()
+
+    def set_playback(self, status):
+        if status != self.playback:
+            self.playback = status
+            if getattr(self, "bus", None):
+                self._tell()
+
+    def _tell(self):
+        changed = self._dbussy.Message.new_signal(PLAYER, "org.freedesktop.DBus.Properties", "PropertiesChanged")
+        changed.append_objects("sa{sv}as", MPRIS, {"PlaybackStatus": ("s", self.playback)}, [])
+        self.bus.connection.send(changed)
+
+    def _called(self, connection, message, _):
+        """BlueZ calls the player with what a headset's buttons ask, in place of the keys it
+        makes of them when there is no player."""
+        DBUS = self._dbussy.DBUS
+        if message.type != DBUS.MESSAGE_TYPE_METHOD_CALL or message.path != PLAYER:
+            return DBUS.HANDLER_RESULT_NOT_YET_HANDLED
+        if message.interface == MPRIS and message.member in REMOTE:
+            self.remote(REMOTE[message.member])
+        if not message.no_reply:
+            connection.send(message.new_method_return())
+        return DBUS.HANDLER_RESULT_HANDLED
 
     def _streaming(self, path):
         """An A2DP stream to this device was set up. That holds for as long as the link does:
@@ -307,9 +359,13 @@ class Bluetooth:
         self._adapter_seen = None
 
     async def start(self):
+        self.backend.remote = lambda action: spawn(self.events.media(action))
         await self.backend.start(self._on_backend)
         self._publish()
         spawn(self._recover())
+
+    def set_playback(self, status):
+        self.backend.set_playback(status)
 
     async def _recover(self, settle=3.0, tries=3):
         """Bluetooth that was on stays on across a boot: when ROCKNIX's own setting did not
