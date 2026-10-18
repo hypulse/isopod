@@ -227,6 +227,12 @@ class Apps:
         app = self.running.get(self.front)
         return bool(app and app["media"])
 
+    @property
+    def front_playing(self):
+        """A video in front that plays. With the lid shut it goes on, as the music does."""
+        app = self.running.get(self.front)
+        return bool(app and app["media"] and app["playing"] and not app["frozen"])
+
     def is_media(self, key):
         app = self.running.get(key)
         return bool(app and app["media"])
@@ -315,11 +321,23 @@ class Apps:
         if app.pop("held", False) and not self.sim:
             await _mpv(app["control"], ["set_property", "pause", False])
 
-    async def set_dark(self, dark):
-        """A dark screen pauses the app in front; light brings it back where it was."""
+    async def set_dark(self, dark, listen=False):
+        """A dark screen pauses the app in front; light brings it back where it was. A video
+        that plays on to be heard only loses its picture, which mpv then stops decoding; its
+        window stays, or mpv would close it and open another for the picture's return."""
         async with self._lock:
             app = self.running.get(self.front)
-            if app and app["frozen"] != dark:
+            if not app:
+                return
+            if dark and listen and app["control"] and app["playing"] and not app["frozen"]:
+                app["unseen"] = True
+                if not self.sim:
+                    await _mpv(app["control"], ["set_property", "force-window", True])
+                    await _mpv(app["control"], ["set_property", "vid", "no"])
+            elif not dark and app.pop("unseen", False):
+                if not self.sim:
+                    await _mpv(app["control"], ["set_property", "vid", "auto"])
+            elif app["frozen"] != dark:
                 await (self._park(app) if dark else self._unpark(app))
 
     async def _make_room(self):

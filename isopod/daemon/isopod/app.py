@@ -55,7 +55,8 @@ class App:
                            remember=lambda level: spawn(self.system.rocknix_setting("audio.volume", level)),
                            lost=self._route_lost, first=self.system.rocknix_volume)
         self.power = Power(self.state, self.settings, self, sim=self.sim, busy=self.system.computer_connected,
-                           remember=lambda percent: spawn(self.system.rocknix_setting("display.brightness", percent)))
+                           remember=lambda percent: spawn(self.system.rocknix_setting("display.brightness", percent)),
+                           video=lambda: self.apps.front_playing)
         self.battery = Battery(self.state, notify=self._battery_low, sim=self.sim)
         runner = getattr(args, "apps", None) or ("sim" if self.sim else "systemd")
         self.apps = Apps(self.state, self, {k: v for k, v in os.environ.items() if k in APP_ENV_KEYS},
@@ -136,10 +137,14 @@ class App:
     def foreground_changed(self):
         self._update_exclusive()
         self.page_changed("/")
+        # A video that ends with the lid shut is followed by sleep, as the music is.
+        spawn(self.power.playback_changed())
 
     def screen_changed(self, on):
         self._update_exclusive()
-        spawn(self.apps.set_dark(not on))
+        # With the lid shut a video that plays goes on to be heard, as the music does.
+        listen = not on and self.power.lid_closed and self.settings["lid_keep_playing"]
+        spawn(self.apps.set_dark(not on, listen=listen))
 
     def screen_timeout(self, setting):
         """Seconds of quiet before the screen goes dark; 0 means never."""
@@ -152,9 +157,9 @@ class App:
         return self.power.screen_on
 
     def playback_changed(self):
-        """The video in front was paused or went on: the screen's hold changes with it, and
-        so does what a headset is told."""
-        self.power.poke()
+        """The video in front was paused or went on: the screen's hold changes with it, so
+        does sleep with the lid shut, and so does what a headset is told."""
+        spawn(self.power.playback_changed())
         self._tell_headset()
 
     def _tell_headset(self):
@@ -190,6 +195,7 @@ class App:
     def before_sleep(self):
         self.audio.flush()
         spawn(self.music.pause())
+        spawn(self.apps.pause_media())
 
     def close(self):
         """Power is about to go, or isopodd is being stopped."""

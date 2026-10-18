@@ -828,6 +828,15 @@ class PowerLidTest(unittest.IsolatedAsyncioTestCase):
         await self.power.lid(True)
         self.assertEqual((self.power.screen_on, self.events.slept), (False, 0))
 
+    async def test_a_video_that_plays_keeps_playing_with_lid_shut_unless_it_always_sleeps(self):
+        self.power.video = lambda: True
+        await self.power.lid(True)
+        self.assertEqual(self.events.slept, 0)
+        await self.power.lid(False)
+        self.power.settings["lid_keep_playing"] = False
+        await self.power.lid(True)
+        self.assertEqual(self.events.slept, 1)
+
     async def test_wake_press_after_sleep_turns_screen_on(self):
         await self.power.sleep()
         self.assertFalse(self.power.screen_on)
@@ -1298,6 +1307,37 @@ class VideoTest(unittest.IsolatedAsyncioTestCase):
         await self.app.apps.set_dark(True)
         await self.app.apps.set_dark(False)
         self.assertEqual(self.mpv.commands, [])
+
+    async def test_with_the_lid_shut_a_playing_film_is_heard_without_its_picture(self):
+        film = self.watch()
+        task = asyncio.ensure_future(self.app.apps._watch_playback("video", film))
+        await asyncio.sleep(0.1)
+        await self.app.lid(True)
+        await asyncio.sleep(0.1)
+        self.assertEqual((film["frozen"], self.app.power._suspended), (False, False))
+        self.assertEqual(self.mpv.commands[-1], ["set_property", "vid", "no"])
+        self.assertIsNone(self.app.power._sleep_deadline(), "while it plays isoPod stays up")
+        await self.mpv.pause(True)
+        self.assertIsNotNone(self.app.power._sleep_deadline(), "paused, it sleeps as the music would")
+        await self.app.lid(False)
+        await asyncio.sleep(0.1)
+        self.assertEqual((film["frozen"], self.mpv.commands[-1]), (False, ["set_property", "vid", "auto"]))
+        task.cancel()
+
+    async def test_with_the_lid_shut_a_paused_film_waits_and_isopod_sleeps(self):
+        film = self.watch()
+        film["playing"] = False
+        await self.app.lid(True)
+        await asyncio.sleep(0.1)
+        self.assertEqual((film["frozen"], self.app.power._suspended, self.mpv.commands), (True, True, []))
+
+    async def test_sleep_pauses_a_film_heard_with_the_lid_shut(self):
+        self.watch()
+        await self.app.lid(True)
+        await asyncio.sleep(0.1)
+        await self.app.power._sleep_timer_done()
+        await asyncio.sleep(0.1)
+        self.assertEqual(self.mpv.commands[-1], ["set_property", "pause", True])
 
     async def test_a_paused_film_lets_the_screen_go(self):
         film = self.watch()

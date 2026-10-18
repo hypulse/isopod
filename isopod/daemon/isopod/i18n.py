@@ -102,7 +102,7 @@ STRINGS = {
     "boot_time": ("부팅 시간", "Boot Time"),
     "minutes": ("{n}분", "{n} minutes"),
     "when_lid_closes": ("뚜껑을 닫으면", "When Lid Closes"),
-    "lid_keep": ("음악은 계속 재생", "Keep Playing Music"),
+    "lid_keep": ("계속 재생", "Keep Playing"),
     "lid_sleep": ("항상 잠자기", "Always Sleep"),
     "sleep_now": ("지금 잠자기", "Sleep Now"),
     "restart": ("재시동", "Restart"),

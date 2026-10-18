@@ -78,13 +78,14 @@ class Power:
     LID_SLEEP = 30
     SETTLE = 2.0
 
-    def __init__(self, state, settings, events, sim=False, remember=None, busy=None):
+    def __init__(self, state, settings, events, sim=False, remember=None, busy=None, video=None):
         self.state = state
         self.settings = settings
         self.events = events
         self.sim = sim
         self.remember = remember
         self.busy = busy or (lambda: False)
+        self.video = video or (lambda: False)
         self._remembering = None
         self.backlight = Backlight()
         self.power_key_lock = Inhibitor("handle-power-key", "isoPod handles the power button")
@@ -113,7 +114,8 @@ class Power:
         return self.state.get("screen")["on"]
 
     def playing(self):
-        return self.state.get("player")["state"] == "play"
+        """The music, or a video in front: either goes on with the lid shut."""
+        return self.state.get("player")["state"] == "play" or self.video()
 
     def apply_brightness(self):
         """ROCKNIX keeps a brightness of its own and sets it at boot and on every wake, so

@@ -61,8 +61,9 @@ replaces the front end with a small shell built around your music.
   home screen lists it so you can pick it up again; Home pressed there goes straight back
   to it. Music and a video never sound together: starting one pauses the other.
 - **Lid and power**: closing the lid turns the screen off and keeps the music playing,
-  and the app in front pauses until the lid opens. With nothing playing the device
-  sleeps, and opening the lid wakes it. Videos keep the screen on while they play.
+  and a video that plays goes on too, to be heard without its picture. A book waits
+  until the lid opens. With nothing playing the device sleeps, and opening the lid wakes
+  it. Videos keep the screen on while they play.
 
 ## The look
 
