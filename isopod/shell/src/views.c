@@ -88,10 +88,13 @@ static void draw_row(Page *p, int i, int x, int y, int w, bool selected)
     Rgba text2 = selected ? RGBA(255, 255, 255, 215) : C_TEXT2;
     int left = x + PAD_X, right = x + w - PAD_X;
 
+    /* What is new, an episode not yet heard, has a blue dot before it, as on the iPod. */
+    if (it->dot)
+        fill_round(x + PAD_X / 2 - 5, y + h / 2 - 5, 10, 10, 5, selected ? C_WHITE : C_ACCENT);
     if (p->art_rows) {
         bool radio = !SDL_strncmp(p->path, "/radio", 6);
-        draw_image(it->art, radio ? "art-radio" : "art-default", left, y + (h - ART_THUMB) / 2, ART_THUMB,
-                   radio ? IMAGE_FIT : 0);
+        const char *blank = radio ? "art-radio" : !SDL_strncmp(p->path, "/podcasts", 9) ? "art-podcast" : "art-default";
+        draw_image(it->art, blank, left, y + (h - ART_THUMB) / 2, ART_THUMB, radio ? IMAGE_FIT : 0);
         left += ART_THUMB + 14;
     } else if (it->icon) {
         const char *name = device_icon(it->icon);
@@ -136,6 +139,10 @@ static void draw_row(Page *p, int i, int x, int y, int w, bool selected)
     }
     if (it->star) {
         draw_icon("star", right - 18, y + (h - 18) / 2, selected ? C_WHITE : C_ACCENT);
+        right -= 30;
+    }
+    if (it->saved) {
+        draw_icon("saved", right - 18, y + (h - 18) / 2, selected ? C_WHITE : C_TEXT3);
         right -= 30;
     }
     if (it->value) {
@@ -307,7 +314,7 @@ static void draw_nowplaying(Page *p, int x)
     /* A station's cover is its logo, whole, on the page's white; shuffle and repeat are a
      * song's, and the line under its name, what it says is on, may take two. */
     bool radio = !strcmp(pl->kind, "radio");
-    const char *blank = radio ? "art-radio" : "art-default";
+    const char *blank = radio ? "art-radio" : !strcmp(pl->kind, "podcast") ? "art-podcast" : "art-default";
     int ix = x + SCREEN_W - 36;
     if (pl->repeat && !radio) {
         draw_icon(pl->single ? "repeat-one" : "repeat", ix - 24, CONTENT_Y + 14, C_ACCENT);
@@ -527,6 +534,7 @@ static const Tone TONES[] = {
     {"radio", RGB(186, 104, 255), RGB(112, 64, 232)},    {"book", RGB(255, 176, 64), RGB(240, 112, 36)},
     {"settings", RGB(156, 162, 176), RGB(96, 102, 116)}, {"playlist", RGB(255, 122, 172), RGB(226, 60, 124)},
     {"genre", RGB(90, 206, 226), RGB(34, 140, 184)},     {"search", RGB(126, 136, 158), RGB(70, 80, 104)},
+    {"podcast", RGB(88, 210, 132), RGB(24, 150, 92)},   {"audiobook", RGB(255, 176, 64), RGB(240, 112, 36)},
 };
 
 #define KB_MS 7000
@@ -573,7 +581,8 @@ static void draw_panel(Page *p, const char *kind, int px, int py, int pw, int ph
     if (!strcmp(kind, "now") && (pl->count || strcmp(pl->state, "stop"))) {
         bool radio = !strcmp(pl->kind, "radio");
         float u = (el % 24000) / 24000.0f;
-        ken_burns(radio ? NULL : pl->art, radio ? "art-radio" : "art-default", px, py, pw, ph,
+        const char *blank = radio ? "art-radio" : !strcmp(pl->kind, "podcast") ? "art-podcast" : "art-default";
+        ken_burns(radio ? NULL : pl->art, blank, px, py, pw, ph,
                   u < 0.5f ? u * 2 : 2 - u * 2, 2, alpha);
         return;
     }

@@ -240,6 +240,8 @@ static void page_fill(Page *p, cJSON *pg)
         d->on = json_bool(it, "on");
         d->lock = json_bool(it, "lock");
         d->star = json_bool(it, "star");
+        d->dot = json_bool(it, "dot");
+        d->saved = json_bool(it, "saved");
         d->header = json_bool(it, "header");
         d->spinner = json_bool(it, "spinner");
         d->signal = json_int(it, "signal", -1);

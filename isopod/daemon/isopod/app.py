@@ -5,6 +5,7 @@ import os
 from . import __version__
 from .apps import Apps, catalog, volume_osd
 from .audio import Audio, FakeAudio, Pactl
+from .audiobooks import Audiobooks
 from .battery import Battery
 from .bluetooth import Bluetooth, FakeBackend, RavelBackend
 from .i18n import Translator
@@ -13,6 +14,7 @@ from .ipc import Server
 from .mpd import MPD
 from .music import Music
 from .pages import Pages
+from .podcasts import Podcasts
 from .power import Power
 from .radio import Radio
 from .settings import Settings
@@ -33,19 +35,27 @@ class App:
         self.sim = args.sim
         self.paths = {"socket": args.socket, "config": args.config, "cache": args.cache,
                       "music": args.music, "videos": args.videos, "books": args.books,
-                      "data": args.data}
+                      "podcasts": getattr(args, "podcasts", "/storage/podcasts"),
+                      "audiobooks": getattr(args, "audiobooks", "/storage/audiobooks"), "data": args.data}
         self.settings = Settings(args.config)
         self.t = Translator(self.settings["lang"])
         self.state = State(self._state_changed)
         self.server = Server(args.socket, self._handle)
         self.system = System(sim=self.sim)
         self.music = Music(MPD(args.mpd, args.mpd_port), self.state, args.cache, music_dir=args.music)
-        self.music.song_changed = lambda: self.page_changed("/nowplaying", "/nowplaying/lyrics")
+        self.music.song_changed = lambda: self.page_changed("/nowplaying", "/nowplaying/lyrics", "/podcasts/*",
+                                                            "/audiobooks/*")
         self.music.favorites_changed = lambda: self.page_changed("/music/*")
         self.music.stream_failed = lambda: self.toast(self.pages.unreachable(), "wifi")
         self.radio = Radio(args.config, args.cache)
         self.radio.changed = lambda: self.page_changed("/radio/*")
         self.music.station_favorite = lambda station: self.radio.is_favorite(station.get("uuid"))
+        self.podcasts = Podcasts(self.paths["podcasts"], args.config, args.cache, lang=lambda: self.t.lang)
+        self.podcasts.changed = lambda: self.page_changed("/podcasts/*")
+        self.podcasts.failed = lambda episode: self.toast(self.t("download_failed"), "wifi")
+        self.audiobooks = Audiobooks(self.paths["audiobooks"], args.config, args.cache, mpd=self.music.mpd)
+        self.audiobooks.changed = lambda: self.page_changed("/audiobooks/*")
+        self.music.identify = lambda uri: self.podcasts.identify(uri) or self.audiobooks.identify(uri)
         self.bluetooth = Bluetooth(FakeBackend() if self.sim else RavelBackend(),
                                    self.state, self.settings, self.t, self, self.system)
         # ROCKNIX switches Wi-Fi by its own setting at boot and on every wake.
@@ -54,7 +64,7 @@ class App:
         self.audio = Audio(FakeAudio() if self.sim else Pactl(), self.state, self.settings,
                            remember=lambda level: spawn(self.system.rocknix_setting("audio.volume", level)),
                            lost=self._route_lost, first=self.system.rocknix_volume)
-        self.power = Power(self.state, self.settings, self, sim=self.sim, busy=self.system.computer_connected,
+        self.power = Power(self.state, self.settings, self, sim=self.sim, busy=self._busy,
                            remember=lambda percent: spawn(self.system.rocknix_setting("display.brightness", percent)),
                            video=lambda: self.apps.front_playing)
         self.battery = Battery(self.state, notify=self._battery_low, sim=self.sim)
@@ -95,6 +105,10 @@ class App:
             self._last_player_state = playing
             spawn(self.power.playback_changed())
             self.page_changed("/")
+
+    def _busy(self):
+        """A computer copying over the cable, or an episode coming down: no sleep yet."""
+        return self.system.computer_connected() or self.podcasts.downloading()
 
     def toast(self, text, icon=None):
         self.server.broadcast({"event": "toast", "text": text, "icon": icon})

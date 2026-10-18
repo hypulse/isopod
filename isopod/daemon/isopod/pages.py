@@ -1,13 +1,15 @@
 import asyncio
+import datetime
 import logging
 import os
 import secrets
 import zlib
 
 from .countries import NAMES as COUNTRIES, country_name
+from .podcasts import PodcastError
 from .radio import DECADES, GENRES, RadioError
 from .system import human_size
-from .util import enc, sort_key, spawn, split_path
+from .util import enc, fmt_duration, sort_key, spawn, split_path
 
 log = logging.getLogger("isopod.pages")
 
@@ -17,6 +19,8 @@ BOOK_EXTS = (".epub", ".pdf", ".mobi", ".azw3", ".azw", ".fb2", ".fb2.zip", ".cb
              ".txt", ".md", ".rtf", ".docx", ".odt", ".html", ".htm", ".chm", ".xps")
 TIMEOUTS = (15, 30, 60, 120, 300, 0)
 LIMITS = (100, 90, 80, 70, 60, 50)
+SPOKEN = ("podcast", "audiobook")
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 
 def item(key, title, accessory="chevron", **extra):
@@ -146,6 +150,8 @@ class Pages:
         items = [
             item("music", t("music"), preview="art"),
             item("radio", t("radio"), preview="radio"),
+            item("podcasts", t("podcasts"), preview="podcast"),
+            item("audiobooks", t("audiobooks"), preview="audiobook"),
             item("videos", t("videos"), preview="video"),
             item("books", t("books"), preview="book"),
             item("settings", t("settings"), preview="settings"),
@@ -416,10 +422,32 @@ class Pages:
         # Beside the cover: a line about the song, and its words where they follow the song.
         found = await self.app.music.lyrics()
         lines, times = found if found and found[1] else ([], None)
-        radio = self.app.state.get("player")["kind"] == "radio"
+        kind = self.app.state.get("player")["kind"]
+        note = (self._on_air() if kind == "radio" else self._spoken_note() if kind in SPOKEN
+                else self.app.music.details())
         return {"path": path, "title": self.t("now_playing"), "style": "nowplaying", "live": True,
                 "items": [item(f"l{i}", line, "none") for i, line in enumerate(lines)], "times": times,
-                "note": self._on_air() if radio else self.app.music.details()}
+                "note": note}
+
+    def _spoken(self, kind=None):
+        """The episode or the book that is on, and which of its files."""
+        player = self.app.state.get("player")
+        spoken = self.app.music.spoken
+        if not spoken or player["kind"] != spoken.kind or (kind and spoken.kind != kind):
+            return None, None
+        return spoken, spoken.index(player.get("file") or "")
+
+    def _spoken_note(self):
+        """An episode's day, or which of its chapters a book is in."""
+        spoken, index = self._spoken()
+        if not spoken:
+            return ""
+        if spoken.kind == "podcast":
+            return self._date(spoken.episode["date"])
+        if len(spoken.chapters) < 2:
+            return ""
+        at = spoken.chapter(index or 0, self.app.music._position())
+        return f"{at + 1} / {len(spoken.chapters)}"
 
     def _on_air(self):
         """A line about the station that is on: where it is from and what it sends."""
@@ -435,8 +463,13 @@ class Pages:
         repeat = (t("repeat_one") if player["single"] else t("on")) if player["repeat"] else None
         file = player.get("file")
         station = self.app.music.station if player["kind"] == "radio" else None
+        spoken, _ = self._spoken()
         if player["kind"] == "radio":
             options = [self._favorite_row(self.app.radio.is_favorite(station["uuid"]))] if station else []
+        elif player["kind"] == "podcast":
+            options = [{"key": "show", "title": t("go_to_show")}] if spoken else []
+        elif player["kind"] == "audiobook":
+            options = [{"key": "chapters", "title": t("chapters")}] if spoken and len(spoken.chapters) > 1 else []
         else:
             options = [self._favorite_option(file)] if file else []
             options += [
@@ -462,6 +495,11 @@ class Pages:
                 return {"push": "/music/queue"}
             elif choice == "timer":
                 return self._sleep_timer_sheet()
+            elif choice == "show" and spoken:
+                self.app.podcasts.meet(spoken.show)
+                return {"push": "/podcasts/show/" + enc(spoken.show["id"])}
+            elif choice == "chapters" and spoken:
+                return {"push": "/audiobooks/book/" + enc(*spoken.key.split(os.sep))}
             elif choice == "album":
                 song = next((s for s in m.songs if s["file"] == player.get("file")), None)
                 if song:
@@ -616,6 +654,292 @@ class Pages:
                 self._toggle_station(station)
         return {"sheet": {"title": station["name"], "token": self._token(choose),
                           "items": [self._favorite_row(self.app.radio.is_favorite(station["uuid"]))]}}
+
+    # podcasts ----------------------------------------------------------------
+
+    def _date(self, when):
+        """The day an episode came out, with its year when that is not this one."""
+        if not when:
+            return ""
+        day = datetime.date.fromtimestamp(when)
+        this_year = day.year == datetime.date.today().year
+        if self.t.lang == "ko":
+            return f"{day.month}월 {day.day}일" if this_year else f"{day.year}년 {day.month}월 {day.day}일"
+        name = f"{MONTHS[day.month - 1]} {day.day}"
+        return name if this_year else f"{name}, {day.year}"
+
+    def _length(self, seconds):
+        minutes = max(1, round(seconds / 60))
+        hours, minutes = divmod(minutes, 60)
+        if hours:
+            return self.t("hours_minutes", h=hours, m=minutes) if minutes else self.t("hours", n=hours)
+        return self.t("minutes_short", n=minutes)
+
+    def _show_items(self, path, shows, subscribed=False):
+        """A show's row: its cover, and who makes it, or for one subscribed to, its last day."""
+        p = self.app.podcasts
+        items = []
+        for s in shows:
+            about = self._date(p.latest(s)) if subscribed else p.author(s)
+            items.append(item("sh:" + s["id"], p.title(s) or s["url"], subtitle=about or None, art=p.art(s),
+                              dot=(subscribed and p.has_new(s)) or None))
+        p.want_art(shows, lambda show: self._art_arrived(show, path))
+        return items
+
+    def _art_arrived(self, show, path):
+        self.app.page_changed(path)
+        spoken, _ = self._spoken("podcast")
+        if spoken and spoken.show["id"] == show["id"] and not spoken.art:
+            spoken.art = self.app.podcasts.art(show)
+            self.app.state.update("player", art=spoken.art)
+
+    def _episode_items(self, pairs, with_show=False):
+        """An episode's row says when it came out (or what show it is of), how long it is or
+        how much of it is left, whether it is new and whether it is on the card."""
+        p = self.app.podcasts
+        spoken, _ = self._spoken("podcast")
+        items = []
+        for show, e in pairs:
+            pos, done = p.place(e["id"])
+            about = [p.title(show)] if with_show else [self._date(e["date"])]
+            if done:
+                about.append(self.t("heard"))
+            elif pos and e["duration"] > pos:
+                about.append(self.t("time_left", time=self._length(e["duration"] - pos)))
+            elif e["duration"]:
+                about.append(self._length(e["duration"]))
+            busy = e["id"] in p.progress
+            share = p.progress.get(e["id"])
+            mark = "playing" if spoken and spoken.episode["id"] == e["id"] else "spinner" if busy else "none"
+            items.append(item("e:" + e["id"], e["title"], mark, subtitle=" · ".join(filter(None, about)) or None,
+                              value=f"{int(share * 100)}%" if busy and share is not None else None,
+                              dot=p.is_new(show, e) or None, saved=bool(p.file(e["id"])) or None))
+        return items
+
+    async def _page_podcasts(self, path, rest):
+        t = self.t
+        p = self.app.podcasts
+        if not rest:
+            items = [item("shows", t("subscriptions")), item("downloads", t("downloads")),
+                     item("top", t("popular")), item("search", t("search"))]
+            return page(path, t("podcasts"), items)
+        kind = rest[0]
+        if kind == "shows":
+            p.renew_subscriptions()
+            shows = sorted(p.subscriptions(), key=lambda s: -p.latest(s))
+            return page(path, t("subscriptions"), self._show_items(path, shows, subscribed=True), rows="art",
+                        empty=empty("podcast", t("no_subscriptions_title"), t("no_subscriptions_text")))
+        if kind == "downloads":
+            return page(path, t("downloads"), self._episode_items(p.downloaded(), with_show=True), rows="tall",
+                        empty=empty("podcast", t("no_downloads_title"), t("no_downloads_text")))
+        if kind == "show" and len(rest) >= 2:
+            show = p.show(rest[1])
+            if not show:
+                return page(path, "", [])
+            items = [item("subscribe", t("subscribe"), "switch", on=p.is_subscribed(show["id"]))]
+            try:
+                feed = await p.feed(show)
+            except PodcastError:
+                return page(path, p.title(show), items + [header(self.unreachable())], rows="tall")
+            p.want_art([show], lambda found: self._art_arrived(found, path))
+            episodes = self._episode_items([(show, e) for e in feed["episodes"]])
+            return page(path, p.title(show), items + (episodes or [header(t("no_episodes"))]), rows="tall")
+        title = t("popular") if kind == "top" else t("search_for", q=rest[1]) if len(rest) > 1 else ""
+        try:
+            shows = await p.top() if kind == "top" else await p.search(rest[1]) if len(rest) > 1 else None
+        except PodcastError:
+            return page(path, title, [], empty=empty("wifi", self.unreachable()))
+        if shows is None:
+            return page(path, "", [])
+        return page(path, title, self._show_items(path, shows), rows="art",
+                    empty=empty("search", t("no_results")) if kind == "search" else None)
+
+    async def _episode(self, rest, key):
+        """The show and the episode a row of this page is, or (None, None)."""
+        p = self.app.podcasts
+        if not key.startswith("e:"):
+            return None, None
+        eid = key[2:]
+        if rest and rest[0] == "downloads":
+            pairs = p.downloaded()
+        elif rest[:1] == ["show"] and len(rest) >= 2 and p.show(rest[1]):
+            show = p.show(rest[1])
+            try:
+                await p.feed(show)
+            except PodcastError:
+                pass
+            pairs = [(show, e) for e in p.episodes(show)]
+        else:
+            pairs = []
+        return next(((s, e) for s, e in pairs if e["id"] == eid), (None, None))
+
+    async def _do_podcasts(self, path, rest, key):
+        p = self.app.podcasts
+        if not rest:
+            if key == "search":
+                return {"input": {"title": self.t("search"), "placeholder": self.t("search_podcasts_prompt"),
+                                  "token": self._token(self._podcast_search)}}
+            return {"push": "/podcasts/" + key}
+        if key.startswith("sh:"):
+            return {"push": "/podcasts/show/" + enc(key[3:])}
+        if key == "subscribe" and len(rest) >= 2:
+            show = p.show(rest[1])
+            if show:
+                p.subscribe(show, not p.is_subscribed(show["id"]))
+                self.app.page_changed("/podcasts/*")
+            return {"reload": True}
+        show, episode = await self._episode(rest, key)
+        if episode:
+            spoken, start = p.play(show, episode)
+            await self.app.music.play_spoken(spoken, 0, start)
+            return {"nowplaying": True}
+
+    def _podcast_search(self, text):
+        text = (text or "").strip()
+        return {"push": "/podcasts/search/" + enc(text)} if text else {"none": True}
+
+    async def _alt_podcasts(self, path, rest, key):
+        t = self.t
+        p = self.app.podcasts
+        if key.startswith("sh:"):
+            show = p.show(key[3:])
+            if not show:
+                return None
+
+            def subscribe(choice):
+                if choice == "subscribe":
+                    p.subscribe(show, not p.is_subscribed(show["id"]))
+                    self.app.page_changed("/podcasts/*")
+                return {"reload": True}
+            row = {"key": "subscribe", "title": t("subscribe"), "value": t("on") if p.is_subscribed(show["id"]) else None}
+            return {"sheet": {"title": p.title(show), "items": [row], "token": self._token(subscribe)}}
+        show, episode = await self._episode(rest, key)
+        if not episode:
+            return None
+        eid = episode["id"]
+        if eid in p.progress:
+            options = [{"key": "cancel", "title": t("cancel_download")}]
+        elif p.file(eid):
+            options = [{"key": "remove", "title": t("remove_download"), "destructive": True}]
+        else:
+            options = [{"key": "download", "title": t("download")}]
+        done = p.place(eid)[1]
+        options.append({"key": "heard", "title": t("mark_unplayed") if done else t("mark_played")})
+        if rest[0] == "downloads":
+            options.append({"key": "show", "title": t("go_to_show")})
+
+        def choose(choice):
+            if choice == "download":
+                p.download(show, episode)
+            elif choice == "cancel":
+                p.cancel(eid)
+            elif choice == "remove":
+                p.remove(eid)
+            elif choice == "heard":
+                p.set_heard(eid, not done)
+            elif choice == "show":
+                p.meet(show)
+                return {"push": "/podcasts/show/" + enc(show["id"])}
+            return {"reload": True}
+        return {"sheet": {"title": episode["title"], "items": options, "token": self._token(choose)}}
+
+    # audiobooks --------------------------------------------------------------
+
+    def _book_about(self, key):
+        """Who wrote it, and how much of it there is or is left to hear."""
+        b = self.app.audiobooks
+        files = b.files(key)
+        author = b._file_info(files[0]).get("artist", "") if files else ""
+        if b.place(key)[2]:
+            heard = self.t("heard")
+        elif b.started(key):
+            left = b.left(key)
+            heard = self.t("time_left", time=self._length(left)) if left else None
+        else:
+            total = b.total(key)
+            heard = self._length(total) if total else None
+        return " · ".join(filter(None, (author, heard))) or None
+
+    async def _page_audiobooks(self, path, rest):
+        t = self.t
+        b = self.app.audiobooks
+        if rest[:1] == ["book"] and len(rest) > 1:
+            key = os.path.join(*rest[1:])
+            book = b.book(key)
+            if not book:
+                return page(path, "", [])
+            spoken, index = self._spoken("audiobook")
+            if spoken and spoken.key == key:
+                here = spoken.chapter(index or 0, self.app.music._position())
+            else:
+                file, pos, done = b.place(key)
+                here = book.chapter(file, pos) if b.started(key) and not done else None
+            lengths = b.durations(key)
+            items = []
+            for i, (file, start, title) in enumerate(book.chapters):
+                nxt = book.chapters[i + 1] if i + 1 < len(book.chapters) else None
+                end = nxt[1] if nxt and nxt[0] == file else lengths[file] if file < len(lengths) else 0
+                mark = "playing" if spoken and spoken.key == key and i == here else "none"
+                items.append(item(f"c{i}", title, mark, value=fmt_duration(end - start) if end > start else None))
+            spawn(b.measure([key]))
+            return page(path, book.title, items, selected=here or 0)
+        rel = os.path.join(*rest[1:]) if rest[:1] == ["in"] and len(rest) > 1 else ""
+        folders, keys = b.listing(rel)
+        spoken, _ = self._spoken("audiobook")
+        items = [item("d:" + d, d, art=b.folder_art(os.path.join(rel, d))) for d in folders]
+        items += [item("b:" + k, b.title(k), "playing" if spoken and spoken.key == k else "none",
+                       subtitle=self._book_about(k), art=b.art(k)) for k in keys]
+        spawn(self._measure_books(keys))
+        return page(path, os.path.basename(rel) or t("audiobooks"), items, rows="art" if keys else None,
+                    empty=empty("audiobook", t("no_audiobooks_title"), t("no_audiobooks_text")))
+
+    async def _measure_books(self, keys):
+        b = self.app.audiobooks
+        await b.measure(keys)
+        await b.fetch_art(keys)
+
+    async def _play_book(self, key, chapter=None):
+        b = self.app.audiobooks
+        book = b.book(key)
+        if not book:
+            return None
+        index, start = b.resume(key) if chapter is None else book.chapters[chapter][:2]
+        await self.app.music.play_spoken(book, index, start)
+        return {"nowplaying": True}
+
+    async def _do_audiobooks(self, path, rest, key):
+        if rest[:1] == ["book"] and len(rest) > 1 and key.startswith("c"):
+            return await self._play_book(os.path.join(*rest[1:]), int(key[1:]))
+        if key.startswith("d:"):
+            base = rest[1:] if rest[:1] == ["in"] else []
+            return {"push": "/audiobooks/in/" + enc(*base, key[2:])}
+        if key.startswith("b:"):
+            return await self._play_book(key[2:])
+
+    async def _alt_audiobooks(self, path, rest, key):
+        t = self.t
+        b = self.app.audiobooks
+        if not key.startswith("b:"):
+            return None
+        book_key = key[2:]
+        book = b.book(book_key)
+        if not book:
+            return None
+        done = b.place(book_key)[2]
+        options = [{"key": "chapters", "title": t("chapters")}] if len(book.chapters) > 1 else []
+        if b.started(book_key) and not done:
+            options.append({"key": "start", "title": t("from_beginning")})
+        options.append({"key": "heard", "title": t("mark_unplayed") if done else t("mark_played")})
+
+        async def choose(choice):
+            if choice == "chapters":
+                return {"push": "/audiobooks/book/" + enc(*book_key.split(os.sep))}
+            if choice == "start":
+                return await self._play_book(book_key, 0)
+            if choice == "heard":
+                b.set_heard(book_key, not done)
+            return {"reload": True}
+        return {"sheet": {"title": book.title, "items": options, "token": self._token(choose)}}
 
     # videos, books ---------------------------------------------------------
 

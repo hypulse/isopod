@@ -9,6 +9,12 @@ SHOTS=${2:-/out}
 
 mkdir -p "$WORK/share" "$WORK/config" "$WORK/cache" "$SHOTS"
 [ -d "$WORK/music" ] || python3 "$ROOT/tools/gen_test_music.py" "$WORK"
+# The shows the library comes with are subscribed to and have their covers, as on a device.
+if [ -d "$WORK/feeds" ]; then
+    mkdir -p "$WORK/podcasts" "$WORK/cache/podcasts/art"
+    [ -e "$WORK/podcasts/Subscriptions.opml" ] || cp "$WORK/feeds/Subscriptions.opml" "$WORK/podcasts/"
+    cp "$WORK"/feeds/art/*.png "$WORK/cache/podcasts/art/"
+fi
 
 ln -sfn /usr/share/fonts/pretendard "$WORK/share/fonts"
 ln -sfn "$ROOT/shell/assets/icons" "$WORK/share/icons"
@@ -35,6 +41,7 @@ pkill -f "isopodd --sim" 2>/dev/null || true
 export PATH="$ROOT/shell:$PATH"  # isopod-thumb, which isopodd runs on station logos
 python3 "$ROOT/daemon/isopodd" --sim --socket "$WORK/isopodd.sock" --config "$WORK/config" \
     --cache "$WORK/cache" --music "$WORK/music" --videos "$WORK/videos" --books "$WORK/books" --data "$WORK/share" \
+    --podcasts "$WORK/podcasts" --audiobooks "$WORK/audiobooks" \
     --mpd "$WORK/mpd.sock" >"$WORK/isopodd.log" 2>&1 &
 DAEMON=$!
 

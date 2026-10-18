@@ -14,7 +14,7 @@ grep -qs "/usr/share/isopod/sway.conf" "${SWAY_CONFIG}" ||
 # Media lives in /storage; a second microSD card, which a computer can read, shows up
 # inside each library as its own folder.
 CARD=/storage/games-external
-for KIND in music videos books; do
+for KIND in music videos books audiobooks; do
   mkdir -p "/storage/${KIND}"
   LINK="/storage/${KIND}/SD Card"
   if grep -qs " ${CARD} " /proc/mounts && mkdir -p "${CARD}/${KIND}" 2>/dev/null; then

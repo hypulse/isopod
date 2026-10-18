@@ -1,8 +1,11 @@
 import asyncio
 import dataclasses
+import datetime
+import email.utils
 import json
 import os
 import re
+import struct
 import sys
 import tempfile
 import time
@@ -2016,3 +2019,462 @@ class SleepingRadioTest(unittest.IsolatedAsyncioTestCase):
         root, driver = self.sysfs(adapter=True)
         await System(sysfs=root).wake_bluetooth(wait=0)
         self.assertFalse(os.path.exists(os.path.join(driver, "unbind")))
+
+
+# podcasts and audiobooks -----------------------------------------------------------
+
+from isopod.audiobooks import Audiobooks, mp4_chapters, natural_key  # noqa: E402
+from isopod.music import Spoken  # noqa: E402
+from isopod.podcasts import (Podcasts, PodcastError, parse_duration, parse_feed, read_opml,  # noqa: E402
+                             show_id, write_opml)
+
+
+def feed_xml(title, items, ns="http://www.itunes.com/dtds/podcast-1.0.dtd", image="https://x/cover.jpg"):
+    body = "".join(
+        f"<item><title>{t}</title><guid>{g}</guid><pubDate>{d}</pubDate><itunes:duration>{length}</itunes:duration>"
+        + (f'<enclosure url="{url}" type="audio/mpeg" length="1000"/>' if url else "") + "</item>"
+        for t, g, d, length, url in items)
+    return (f'<?xml version="1.0" encoding="utf-8"?><rss version="2.0" xmlns:itunes="{ns}"><channel>'
+            f'<title>{title}</title><itunes:author>MBC</itunes:author><itunes:image href="{image}"/>'
+            f"{body}</channel></rss>").encode()
+
+
+class PodcastFeedTest(unittest.TestCase):
+    def test_a_feed_read_whatever_case_its_itunes_namespace_is_in(self):
+        data = feed_xml("손에 잡히는 경제", [
+            ("Older", "a", "Mon, 06 Oct 2026 08:00:00 +0900", "12:30", "https://x/a.mp3"),
+            ("No file", "b", "Tue, 07 Oct 2026 08:00:00 +0900", "1", ""),
+            ("Newer", "c", "Wed, 08 Oct 2026 08:00:00 +0900", "1:02:03", "https://x/c.mp3"),
+        ], ns="http://www.itunes.com/DTDs/Podcast-1.0.dtd")
+        feed = parse_feed(data, "https://x/feed")
+        self.assertEqual((feed["title"], feed["author"], feed["image"]), ("손에 잡히는 경제", "MBC", "https://x/cover.jpg"))
+        self.assertEqual([e["title"] for e in feed["episodes"]], ["Newer", "Older"], "newest first, files only")
+        self.assertEqual([e["duration"] for e in feed["episodes"]], [3723, 750])
+
+    def test_only_a_feed_on_the_device_points_at_files_on_it(self):
+        items = [("Local", "a", "", "10", "file:///storage/.config/secret")]
+        self.assertEqual(parse_feed(feed_xml("Web", items), "https://x/feed")["episodes"], [])
+        self.assertEqual(len(parse_feed(feed_xml("Here", items), "file:///tmp/feed.xml")["episodes"]), 1)
+
+    def test_what_is_not_a_feed(self):
+        with self.assertRaises(PodcastError):
+            parse_feed(b"<html><body>Not found</body></html>", "https://x/feed")
+        with self.assertRaises(PodcastError):
+            parse_feed(b"not xml", "https://x/feed")
+
+    def test_durations(self):
+        self.assertEqual([parse_duration(t) for t in ("754", "12:34", "1:02:03", "00:10:00.5", "", "25분")],
+                         [754, 754, 3723, 600, 0, 0])
+
+    def test_opml_both_ways(self):
+        path = os.path.join(tempfile.mkdtemp(), "Subscriptions.opml")
+        shows = [{"id": show_id("https://x/a?b=1&c=2"), "url": "https://x/a?b=1&c=2", "title": 'Tom & "Jerry"',
+                  "image": "https://x/a.jpg"}]
+        write_opml(path, shows)
+        self.assertEqual(read_opml(path), shows)
+        with open(path, "w") as f:  # as another app writes one: folders, and no title but text
+            f.write('<opml version="1.0"><body><outline text="Feeds"><outline type="rss" text="Nested" '
+                    'xmlUrl="https://y/feed"/></outline></body></opml>')
+        self.assertEqual([(s["title"], s["url"]) for s in read_opml(path)], [("Nested", "https://y/feed")])
+
+
+class Web:
+    """Addresses and what is at them; the count of each fetch."""
+
+    def __init__(self, pages):
+        self.pages = pages
+        self.asked = []
+
+    def __call__(self, url, limit=0, timeout=0):
+        self.asked.append(url)
+        for start, body in self.pages.items():
+            if url.startswith(start):
+                return body() if callable(body) else body
+        raise PodcastError("unreachable")
+
+
+class PodcastsTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.root = tempfile.mkdtemp()
+        now = time.time()
+        when = lambda days: email.utils.formatdate(now - days * 86400)  # noqa: E731
+        self.feed = feed_xml("Show", [("New one", "n", when(1), "600", "https://x/new.mp3"),
+                                      ("Old one", "o", when(100), "600", "https://x/old.mp3")])
+        self.web = Web({"https://x/feed": lambda: self.feed,
+                        "https://itunes.apple.com/search": json.dumps({"results": [
+                            {"collectionName": "Show", "artistName": "Host", "feedUrl": "https://x/feed",
+                             "artworkUrl600": "https://x/600.jpg"}, {"collectionName": "No feed"}]}).encode()})
+        self.p = Podcasts(os.path.join(self.root, "podcasts"), self.root, self.root, fetch=self.web,
+                          download=lambda url, limit=0, timeout=0: b"")
+
+    async def test_found_subscribed_to_and_kept_in_the_opml_file(self):
+        found = await self.p.search("show")
+        self.assertEqual([(s["title"], s["author"]) for s in found], [("Show", "Host")], "a show with no feed is none")
+        self.p.subscribe(found[0], True)
+        self.assertEqual([s["url"] for s in read_opml(self.p.opml)], ["https://x/feed"])
+        self.assertEqual(self.p.subscriptions()[0]["image"], "https://x/600.jpg", "the small cover is remembered")
+        self.p.subscribe(found[0], False)
+        self.assertEqual(self.p.subscriptions(), [])
+
+    async def test_the_chart_in_its_order_with_the_feeds_looked_up(self):
+        self.web.pages["https://itunes.apple.com/kr/rss/toppodcasts"] = json.dumps({"feed": {"entry": [
+            {"id": {"attributes": {"im:id": "2"}}}, {"id": {"attributes": {"im:id": "1"}}}]}}).encode()
+        self.web.pages["https://itunes.apple.com/lookup"] = json.dumps({"results": [
+            {"collectionId": 1, "collectionName": "One", "feedUrl": "https://x/1"},
+            {"collectionId": 2, "collectionName": "Two", "feedUrl": "https://x/2"}]}).encode()
+        self.assertEqual([s["title"] for s in await self.p.top()], ["Two", "One"])
+        asked = len(self.web.asked)
+        await self.p.top()
+        self.assertEqual(len(self.web.asked), asked, "kept a day")
+
+    async def test_an_opml_file_copied_in_is_read_again(self):
+        self.assertEqual(self.p.subscriptions(), [])
+        write_opml(self.p.opml, [{"id": show_id("https://x/feed"), "url": "https://x/feed", "title": "Show"}])
+        os.utime(self.p.opml, (time.time() + 5, time.time() + 5))
+        self.assertEqual([s["title"] for s in self.p.subscriptions()], ["Show"])
+
+    async def test_episodes_are_kept_and_asked_for_again_once_they_have_aged(self):
+        show = {"id": show_id("https://x/feed"), "url": "https://x/feed", "title": "Show"}
+        self.assertEqual(len((await self.p.feed(show))["episodes"]), 2)
+        await self.p.feed(show)
+        self.assertEqual(len(self.web.asked), 1, "kept")
+        self.feed = feed_xml("Show", [("Newest", "z", email.utils.formatdate(), "60", "https://x/z.mp3")])
+        aged(self.p._feed_file(show["id"]))
+        self.assertEqual(len((await self.p.feed(show))["episodes"]), 2, "shown as it was")
+        await asyncio.sleep(0.05)
+        self.assertEqual([e["title"] for e in (await self.p.feed(show))["episodes"]], ["Newest"], "fetched behind")
+
+    async def test_what_is_new_is_what_came_out_lately_and_was_not_heard(self):
+        show = {"id": show_id("https://x/feed"), "url": "https://x/feed", "title": "Show"}
+        self.p.subscribe(show, True)
+        new, old = (await self.p.feed(show))["episodes"]
+        self.assertEqual((self.p.is_new(show, new), self.p.is_new(show, old)), (True, False))
+        self.assertTrue(self.p.has_new(show))
+        self.p.heard(new["id"], 100, 600)
+        self.assertFalse(self.p.is_new(show, new), "begun")
+
+    async def test_a_place_is_kept_and_the_end_is_heard(self):
+        self.p.heard("e", 3, 600)
+        self.assertEqual(self.p.place("e"), (0, False), "a few seconds is no place")
+        self.p.heard("e", 200, 600, force=True)
+        self.assertEqual(load(self.p.state_path)["episodes"]["e"], {"pos": 200, "done": False})
+        self.p.heard("e", 580, 600)
+        self.assertEqual(self.p.place("e"), (0, True), "the last half minute is the credits")
+        self.p.set_heard("e", False)
+        self.assertEqual(self.p.place("e"), (0, False))
+
+    async def test_a_download_is_played_from_the_card_where_it_was_left(self):
+        show = {"id": show_id("https://x/feed"), "url": "https://x/feed", "title": "Show: Live"}
+        source = os.path.join(self.root, "source.mp3")
+        with open(source, "wb") as f:
+            f.write(b"ID3" + b"\0" * 5000)
+        episode = {"id": "e1", "title": "One/Two", "date": 1791000000, "duration": 600, "url": "file://" + source,
+                   "type": "audio/mpeg", "size": 5003}
+        spoken, start = self.p.play(show, episode)
+        self.assertEqual((spoken.uris, start), (["file://" + source], 0), "from the web while it is not here")
+        self.p.download(show, episode)
+        self.assertTrue(self.p.downloading())
+        await self.p._worker
+        file = self.p.file("e1")
+        self.assertEqual(os.path.relpath(file, self.p.folder), "Show Live/2026-10-03 One Two.mp3")
+        self.assertEqual(os.path.getsize(file), 5003)
+        self.assertFalse(self.p.downloading())
+        self.p.heard("e1", 120, 600, force=True)
+        spoken, start = self.p.play(show, episode)
+        self.assertEqual((spoken.uris, start), (["file://" + file], 118))
+        again = Podcasts(self.p.folder, self.root, self.root, fetch=self.web)
+        self.assertEqual(again.identify(file).title, "One/Two", "known again after a restart")
+        self.assertEqual([e["id"] for _, e in again.downloaded()], ["e1"])
+        again.remove("e1")
+        self.assertFalse(os.path.exists(os.path.dirname(file)))
+
+    async def test_a_download_that_cannot_be_had_is_said_so(self):
+        failed = []
+        self.p.failed = failed.append
+        episode = {"id": "e2", "title": "Gone", "date": 0, "duration": 0, "url": "file:///nowhere/at/all.mp3"}
+        self.p.download({"id": "s", "url": "u", "title": "S"}, episode)
+        await self.p._worker
+        self.assertEqual((failed, self.p.file("e2"), os.listdir(self.p.folder)), ([episode], None, []))
+
+
+def load(path):
+    with open(path) as f:
+        return json.load(f)
+
+
+class Mpd:
+    """Records commands; plays what it was given, at the time it was asked for."""
+
+    def __init__(self):
+        self.sent = []
+        self.queue = []
+        self.at = (0, 0.0)
+        self.duration = 600.0
+
+    async def call(self, name, *args):
+        self.sent.append((name, *args))
+        if name == "seek":
+            self.at = (int(args[0]), float(args[1]))
+        if name == "seekcur":
+            self.at = (self.at[0], float(args[0]))
+        if name == "status":
+            return [("state", "play"), ("song", str(self.at[0])), ("elapsed", str(self.at[1])),
+                    ("duration", str(self.duration)), ("playlistlength", str(len(self.queue))), ("audio", "x")]
+        if name == "currentsong":
+            return [("file", self.queue[self.at[0]])] if self.queue else []
+        return []
+
+    async def call_list(self, commands):
+        for c in commands:
+            if c[0] == "clear":
+                self.queue = []
+            elif c[0] == "add":
+                self.queue.append(c[1])
+            elif c[0] == "play":
+                self.at = (int(c[1]), 0.0)
+        self.sent += commands
+
+
+class SpokenPlaybackTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.mpd = Mpd()
+        self.state = State(lambda snap: None)
+        self.music = Music(self.mpd, self.state, tempfile.mkdtemp())
+        self.heard = []
+
+        test = self
+
+        class Talk(Spoken):
+            def heard(self, index, elapsed, duration, force=False):
+                test.heard.append((index, elapsed, force))
+
+        self.talk = Talk("k", ["file:///a.mp3", "file:///b.mp3"], "A Talk", "Someone")
+        self.talk.kind = "audiobook"
+
+    async def test_it_starts_where_it_was_left_with_repeat_and_shuffle_off(self):
+        await self.music.play_spoken(self.talk, 1, 42.0)
+        self.assertEqual(self.mpd.sent[:6], [("clear",), ("random", "0"), ("repeat", "0"), ("single", "0"),
+                                             ("add", "file:///a.mp3"), ("add", "file:///b.mp3")])
+        self.assertEqual(self.mpd.sent[-1], ("seek", "1", "42.0"))
+        await self.music.refresh()
+        player = self.state.get("player")
+        self.assertEqual((player["kind"], player["title"], player["artist"]), ("audiobook", "A Talk", "Someone"))
+        self.assertEqual(self.heard, [(1, 42.0, False)])
+
+    async def test_back_and_ahead_are_seconds_not_files(self):
+        await self.music.play_spoken(self.talk, 0, 100.0)
+        await self.music.refresh()
+        await self.music.previous()
+        self.assertEqual(self.mpd.sent[-1][0], "seekcur")
+        self.assertAlmostEqual(float(self.mpd.sent[-1][1]), 85.0, delta=0.5)
+        self.mpd.at = (0, 590.0)
+        await self.music.refresh()
+        await self.music.next()
+        self.assertEqual(self.mpd.sent[-1], ("seekcur", "599.0"), "not past the end")
+
+    async def test_mpd_found_playing_one_after_a_restart_is_known_again(self):
+        self.mpd.queue = ["/b.mp3"]
+        self.music.identify = lambda uri: self.talk if self.talk.index(uri) is not None else None
+        await self.music.refresh()
+        self.assertEqual(self.state.get("player")["kind"], "audiobook", "with or without file://")
+
+
+def box(kind, body):
+    return struct.pack(">I4s", 8 + len(body), kind.encode()) + body
+
+
+def full(kind, body, version=0):
+    return box(kind, bytes([version, 0, 0, 0]) + body)
+
+
+class AudiobooksTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.lib = os.path.join(self.root, "audiobooks")
+        for path in ("Saint-Exupéry/어린 왕자/1장.mp3", "Saint-Exupéry/어린 왕자/10장.mp3",
+                     "Saint-Exupéry/어린 왕자/2장.mp3", "Saint-Exupéry/어린 왕자/cover.jpg",
+                     "Hound/CD 2/01.mp3", "Hound/CD 1/02.mp3", "Hound/CD 1/01.mp3", "Single.m4b",
+                     "Saint-Exupéry/Notes/readme.txt", "Austen/Emma.m4b", "Austen/Persuasion.m4b"):
+            os.makedirs(os.path.dirname(os.path.join(self.lib, path)), exist_ok=True)
+            open(os.path.join(self.lib, path), "w").close()
+        self.b = Audiobooks(self.lib, self.root, self.root)
+
+    def test_folders_of_books_and_books(self):
+        self.assertEqual(self.b.listing(), (["Austen", "Saint-Exupéry"], ["Hound", "Single.m4b"]))
+        self.assertEqual(self.b.listing("Austen"), ([], ["Austen/Emma.m4b", "Austen/Persuasion.m4b"]),
+                         "a folder of M4Bs is a shelf of books")
+        self.assertEqual(self.b.listing("Saint-Exupéry"), (["Notes"], ["Saint-Exupéry/어린 왕자"]))
+        self.assertEqual([os.path.relpath(f, self.lib) for f in self.b.files("Saint-Exupéry/어린 왕자")],
+                         ["Saint-Exupéry/어린 왕자/1장.mp3", "Saint-Exupéry/어린 왕자/2장.mp3",
+                          "Saint-Exupéry/어린 왕자/10장.mp3"])
+        self.assertEqual([os.path.relpath(f, self.lib) for f in self.b.files("Hound")],
+                         ["Hound/CD 1/01.mp3", "Hound/CD 1/02.mp3", "Hound/CD 2/01.mp3"], "disc by disc")
+        self.assertEqual(self.b.art("Saint-Exupéry/어린 왕자"), os.path.join(self.lib, "Saint-Exupéry/어린 왕자/cover.jpg"))
+        self.assertEqual(self.b.listing("../.."), self.b.listing(), "nothing above the library")
+
+    def test_a_place_in_a_book_is_kept_until_its_end_is_heard(self):
+        book = self.b.book("Hound")
+        self.assertEqual(self.b.resume("Hound"), (0, 0.0))
+        book.heard(1, 65.0, 300.0, force=True)
+        self.assertEqual(Audiobooks(self.lib, self.root, self.root).resume("Hound"), (1, 63.0))
+        book.heard(2, 290.0, 300.0)
+        self.assertEqual(self.b.place("Hound"), (0, 0, True))
+        self.assertEqual(self.b.resume("Hound"), (0, 0.0), "heard: from the beginning again")
+
+    def test_a_book_mpd_is_found_playing_is_known_again(self):
+        book = self.b.identify("file://" + os.path.join(self.lib, "Hound/CD 2/01.mp3"))
+        self.assertEqual((book.key, book.title, book.index(os.path.join(self.lib, "Hound/CD 2/01.mp3"))),
+                         ("Hound", "Hound", 2))
+        self.assertIsNone(self.b.identify("file:///elsewhere/x.mp3"))
+
+    def test_nero_chapters(self):
+        entries = b"".join(struct.pack(">QB", int(start * 1e7), len(t.encode())) + t.encode()
+                           for start, t in ((0, "Opening"), (95.5, "둘째 장"), (300, "Last")))
+        chpl = full("chpl", b"\0\0\0\0" + bytes([3]) + entries, version=1)
+        path = os.path.join(self.root, "nero.m4b")
+        with open(path, "wb") as f:
+            f.write(box("ftyp", b"M4B \0\0\0\0") + box("moov", box("udta", chpl)))
+        self.assertEqual(mp4_chapters(path), [(0.0, "Opening"), (95.5, "둘째 장"), (300.0, "Last")])
+
+    def test_a_quicktime_chapter_track(self):
+        titles = [b"Chapter One", "둘".encode()]
+        samples = b"".join(struct.pack(">H", len(t)) + t for t in titles)
+        head = box("ftyp", b"M4A \0\0\0\0")
+
+        def moov(offset):
+            def tkhd(track):
+                return full("tkhd", b"\0" * 8 + struct.pack(">I", track) + b"\0" * 68)
+            audio = box("trak", tkhd(1) + box("tref", box("chap", struct.pack(">I", 2))))
+            stbl = box("stbl", full("stts", struct.pack(">III", 2, 1, 60000))
+                       + full("stsz", struct.pack(">II", 0, 2) + struct.pack(">II", 2 + len(titles[0]), 2 + len(titles[1])))
+                       + full("stsc", struct.pack(">IIII", 1, 1, 2, 1))
+                       + full("stco", struct.pack(">II", 1, offset)))
+            mdhd = full("mdhd", b"\0" * 8 + struct.pack(">II", 1000, 120000) + b"\0" * 4)
+            text = box("trak", tkhd(2) + box("mdia", mdhd + box("minf", stbl)))
+            return box("moov", audio + text)
+        offset = len(head) + len(moov(0)) + 8
+        path = os.path.join(self.root, "itunes.m4a")
+        with open(path, "wb") as f:
+            f.write(head + moov(offset) + box("mdat", samples))
+        self.assertEqual(mp4_chapters(path), [(0.0, "Chapter One"), (60.0, "둘")])
+
+    def test_no_chapters_from_what_is_not_an_mp4(self):
+        path = os.path.join(self.root, "x.m4b")
+        with open(path, "wb") as f:
+            f.write(b"\0\0\0\x08junk" * 3)
+        self.assertEqual(mp4_chapters(path), [])
+        self.assertLess(natural_key("Part 2"), natural_key("Part 10"))
+
+    async def test_a_book_of_chapters_in_one_file(self):
+        file = os.path.join(self.lib, "Single.m4b")
+        self.b._file_info(file)["chapters"] = [(0.0, "One"), (60.0, "Two"), (120.0, "Three")]
+        book = self.b.book("Single.m4b")
+        self.assertEqual((book.album(0, 59), book.album(0, 61), book.album(0, 500)), ("One", "Two", "Three"))
+        self.assertEqual(book.chapter(0, 125), 2)
+
+
+class SpokenPagesTest(unittest.IsolatedAsyncioTestCase):
+    """Podcasts and audiobooks on the screen."""
+
+    async def asyncSetUp(self):
+        root = tempfile.mkdtemp()
+
+        class NoApp:
+            t = Translator("en")
+            changed, toasts = [], []
+
+            class power:
+                sleep_timer_left = staticmethod(lambda: 0)
+
+            def page_changed(self, *paths):
+                self.changed += paths
+
+            def toast(self, text, icon=None):
+                self.toasts.append(text)
+
+        app = self.app = NoApp()
+        app.state = State(lambda snap: None)
+        app.state.data["wifi"]["ssid"] = "Home"
+        self.mpd = Mpd()
+        app.music = Music(self.mpd, app.state, root)
+        now = time.time()
+        self.web = Web({"https://x/feed": feed_xml("Show", [
+            ("New one", "n", email.utils.formatdate(now - 86400), "1500", "https://x/new.mp3"),
+            ("Old one", "o", email.utils.formatdate(now - 400 * 86400), "600", "https://x/old.mp3")])})
+        app.podcasts = Podcasts(os.path.join(root, "podcasts"), root, root, lang=lambda: app.t.lang, fetch=self.web,
+                                download=lambda url, limit=0, timeout=0: b"")
+        lib = os.path.join(root, "audiobooks")
+        os.makedirs(os.path.join(lib, "Book"))
+        for name in ("1.mp3", "2.mp3"):
+            open(os.path.join(lib, "Book", name), "w").close()
+        app.audiobooks = Audiobooks(lib, root, root)
+        app.music.identify = lambda uri: app.podcasts.identify(uri) or app.audiobooks.identify(uri)
+        self.pages = Pages(app)
+        self.show = {"id": show_id("https://x/feed"), "url": "https://x/feed", "title": "Show"}
+
+    async def rows(self, path, *fields):
+        items = [i for i in (await self.pages.build(path))["items"] if not i.get("header")]
+        return [tuple(i.get(f) for f in fields) if len(fields) > 1 else i.get(fields[0]) for i in items]
+
+    async def test_the_menu_and_a_show_subscribed_to(self):
+        self.assertEqual(await self.rows("/podcasts", "title"), ["Subscriptions", "Downloads", "Popular", "Search"])
+        self.assertEqual((await self.pages.build("/podcasts/shows"))["empty"]["title"], "No Subscriptions")
+        self.app.podcasts.subscribe(self.show, True)
+        await self.app.podcasts.feed(self.show)
+        self.assertEqual(await self.rows("/podcasts/shows", "title", "dot"), [("Show", True)])
+        rows = await self.rows("/podcasts/show/" + self.show["id"], "key", "accessory", "on", "subtitle", "dot")
+        self.assertEqual(rows[0], ("subscribe", "switch", True, None, None))
+        self.assertEqual(rows[1][3:], (datetime.date.fromtimestamp(time.time() - 86400).strftime("%b %-d") + " · 25 min",
+                                       True))
+        self.assertIsNone(rows[2][4], "too old to be new")
+
+    async def test_an_episode_plays_and_says_what_is_left(self):
+        self.app.podcasts.meet(self.show)
+        path = "/podcasts/show/" + self.show["id"]
+        key = (await self.rows(path, "key"))[1]
+        self.assertEqual(await self.pages.activate(path, key), {"nowplaying": True})
+        self.assertEqual(self.mpd.queue, ["https://x/new.mp3"])
+        self.mpd.at = (0, 600.0)
+        self.mpd.duration = 1500.0
+        await self.app.music.refresh()
+        player = self.app.state.get("player")
+        self.assertEqual((player["kind"], player["title"], player["artist"]), ("podcast", "New one", "Show"))
+        self.assertEqual((await self.pages.build("/nowplaying"))["note"],
+                         datetime.date.fromtimestamp(time.time() - 86400).strftime("%b %-d"))
+        self.app.podcasts.heard(key[2:], 600, 1500, force=True)
+        self.assertEqual((await self.rows(path, "subtitle", "accessory"))[1][1], "playing")
+        self.assertTrue((await self.rows(path, "subtitle"))[1].endswith("15 min left"))
+        options = await self.pages.now_playing_options()
+        self.assertEqual([o["key"] for o in options["sheet"]["items"]], ["show", "timer"])
+
+    async def test_an_episode_s_options(self):
+        self.app.podcasts.meet(self.show)
+        path = "/podcasts/show/" + self.show["id"]
+        key = (await self.rows(path, "key"))[1]
+        sheet = (await self.pages.alt(path, key))["sheet"]
+        self.assertEqual([o["key"] for o in sheet["items"]], ["download", "heard"])
+        await self.pages.resolve(sheet["token"], "heard")
+        self.assertEqual(self.app.podcasts.place(key[2:]), (0, True))
+        self.assertTrue((await self.rows(path, "subtitle"))[1].endswith("Played"))
+
+    async def test_no_network(self):
+        self.app.podcasts.meet({"id": "gone", "url": "https://gone/feed", "title": "Gone"})
+        page = await self.pages.build("/podcasts/show/gone")
+        self.assertEqual([i["title"] for i in page["items"]], ["Subscribe", "Couldn’t Connect"])
+        self.assertEqual((await self.pages.build("/podcasts/top"))["empty"]["title"], "Couldn’t Connect")
+
+    async def test_audiobooks_on_the_home_screen(self):
+        home = await self.rows("/", "title")
+        self.assertEqual(home[home.index("Podcasts") + 1], "Audiobooks", "beside Podcasts")
+        self.assertNotIn("Audiobooks", await self.rows("/music", "title"))
+        self.assertEqual(await self.rows("/audiobooks", "key", "title"), [("b:Book", "Book")])
+        self.assertEqual(await self.pages.activate("/audiobooks", "b:Book"), {"nowplaying": True})
+        self.assertEqual(self.mpd.queue, ["file://" + os.path.join(self.app.audiobooks.folder, "Book", n)
+                                          for n in ("1.mp3", "2.mp3")])
+        await self.app.music.refresh()
+        self.assertEqual(self.app.state.get("player")["kind"], "audiobook")
+        self.assertEqual((await self.pages.build("/nowplaying"))["note"], "1 / 2")
+        self.assertEqual(await self.rows("/audiobooks/book/Book", "title", "accessory"),
+                         [("1", "playing"), ("2", "none")])
+        sheet = (await self.pages.alt("/audiobooks", "b:Book"))["sheet"]
+        self.assertEqual([o["key"] for o in sheet["items"]], ["chapters", "heard"])

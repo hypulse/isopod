@@ -28,6 +28,18 @@ replaces the front end with a small shell built around your music.
   kept on the card with its logos. Opened a week or more later it shows at once as it was,
   and is fetched again behind that when the network is there. X on a station makes it a
   favorite.
+- **Podcasts** from their own feeds, found by name or among the most listened to in Apple's
+  directory, under Subscriptions, Downloads, Popular and Search. A show's episodes are kept
+  on the card once fetched and asked for again behind them when they are an hour old; one
+  that came out lately and has not been heard has a blue dot before it, as on the iPod. An
+  episode plays from the web, or from the card once X has downloaded it, and nothing is
+  downloaded unless it is asked for. Each episode keeps its place. What is subscribed to is
+  `Subscriptions.opml` in the podcasts folder, beside the downloads: the file podcast apps
+  export and import.
+- **Audiobooks** from `/storage/audiobooks`: a folder of files, one for each chapter or part
+  (or `CD 1`, `CD 2` folders of them), or one file. An M4B's own chapters are read from it,
+  and a folder of M4Bs is a shelf of books, an author's say. A book starts where it was
+  left, and X lists its chapters or starts it over.
 - **Lyrics**, all of them, are a press of Y away: timed lyrics follow the line being sung,
   plain ones scroll. They come from an `.lrc` or `.txt` file beside the song and named
   like it (`Song.mp3`, `Song.lrc`), or from the song's own tags.
@@ -53,8 +65,8 @@ replaces the front end with a small shell built around your music.
   Bluetooth headset, never above the limit, and each comes back where it was left after a
   restart. A headset's own volume buttons count.
 - **Wi-Fi** remembers every network you join.
-- **A cable** to a computer shows the libraries as an MTP device, `Music`, `Videos` and
-  `Books`, a second card being the `SD Card` folder in each. What is copied is in the
+- **A cable** to a computer shows the libraries as an MTP device, `Music`, `Videos`, `Books`,
+  `Audiobooks` and `Podcasts`, a second card being the `SD Card` folder in each but the last. What is copied is in the
   library as it arrives, and isoPod stays awake for as long as the computer has it. A Mac
   needs an MTP app for this, such as OpenMTP.
 - **Multitasking**: a video or a book keeps its place. Home pauses it where it is, and the
@@ -101,7 +113,9 @@ Every screen is a list, and every list works the same way.
 In Now Playing, ← and → are the previous and the next song, and held they wind through the
 song, as on an iPod; ← starts a song again once it is three seconds in. ↑ and ↓ change the
 volume, and Y shows the lyrics. While a station is on, ← and → are the stations before and
-after it in the list it was picked from.
+after it in the list it was picked from. While an episode or a book plays, ← and → go back
+fifteen seconds and ahead thirty, as L2, R2 and a headset's buttons do, and held they wind
+as they do through a song; X goes to the episode's show, or lists the book's chapters.
 
 The on-screen keyboard goes around its edges the way lists do.
 
@@ -148,8 +162,9 @@ The recipes that put these in the image are in `projects/ROCKNIX/packages/isopod
 
    Without it the bootloader has nothing to start Linux with, and the device shows only its
    red light. An SP with the newer panel takes `sun50i-h700-anbernic-rg35xx-sp-v2-panel.dtb`.
-4. Add music, videos and books on a second microSD card (exFAT works with any computer):
-   put them in its `music`, `videos` and `books` folders, lyrics beside their songs. isoPod
+4. Add music, videos, books and audiobooks on a second microSD card (exFAT works with any
+   computer): put them in its `music`, `videos`, `books` and `audiobooks` folders, lyrics
+   beside their songs. isoPod
    creates the folders on first boot and shows the card as an `SD Card` folder in each
    library. With the card in the device, a USB cable to a computer reaches the same folders.
 

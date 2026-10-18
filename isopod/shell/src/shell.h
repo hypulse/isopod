@@ -18,7 +18,7 @@ typedef struct {
     char *key, *title, *subtitle, *value, *art, *icon, *preview, *link;
     int accessory;
     int signal;
-    bool on, header, lock, spinner, star;
+    bool on, header, lock, spinner, star, dot, saved;
     char letter[8];
 } Item;
 

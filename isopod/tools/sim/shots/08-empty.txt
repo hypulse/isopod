@@ -24,9 +24,17 @@ key down
 key down
 key down
 key down
+key down
+key down
 key confirm
 wait 600
 shot 09-shuffle-with-no-songs.png
 key home
 open /music/favorites
 shot 10-favorites.png
+open /podcasts/shows
+shot 11-podcasts.png
+open /podcasts/downloads
+shot 12-podcast-downloads.png
+open /audiobooks
+shot 13-audiobooks.png

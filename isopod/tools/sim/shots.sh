@@ -15,7 +15,7 @@ for TOUR in ${@:-$HERE/shots/*.txt}; do
         DIR=$WORK-empty
         mkdir -p "$DIR/music" "$DIR/videos" "$DIR/books" "$DIR/playlists"
     fi
-    rm -rf "$DIR/config" "$DIR/cache" "$DIR/mpd.state" "$DIR/music/Favorites.m3u" "$OUT/$NAME"
+    rm -rf "$DIR/config" "$DIR/cache" "$DIR/mpd.state" "$DIR/music/Favorites.m3u" "$DIR/podcasts" "$OUT/$NAME"
     ISOPOD_SIM_DIR=$DIR "$HERE/run.sh" "$TOUR" "$OUT/$NAME"
     python3 "$HERE/sheet.py" "$OUT/$NAME" "$OUT/$NAME.png"
 done

@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Create a small fictional music library (tagged MP3s with cover art) for the simulator."""
+import email.utils
+import hashlib
 import math
 import os
 import subprocess
 import sys
+import time
+from xml.sax.saxutils import escape
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -191,5 +195,102 @@ def main(root):
         open(os.path.join(books, name), "a").close()
 
 
+def spoken(out, seconds, title, artist, album, art=None, chapters=None):
+    """A silent file of speech: an MP3, or an M4B with the chapters it names."""
+    if os.path.exists(out):
+        return
+    cmd = ["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-t", str(seconds), "-i", "anullsrc=r=22050:cl=mono"]
+    maps = ["-map", "0:a"]
+    if art:
+        cmd += ["-i", art]
+        maps += ["-map", "1:v", "-c:v", "copy", "-disposition:v", "attached_pic"]
+    if chapters:
+        meta = out + ".txt"
+        with open(meta, "w", encoding="utf-8") as f:
+            f.write(";FFMETADATA1\n")
+            for start, end, name in chapters:
+                f.write(f"[CHAPTER]\nTIMEBASE=1/1000\nSTART={start * 1000}\nEND={end * 1000}\ntitle={name}\n")
+        cmd += ["-i", meta]
+        maps += ["-map_chapters", str(2 if art else 1)]
+    codec = ["-c:a", "aac", "-b:a", "24k", "-f", "mp4"] if out.endswith(".m4b") else \
+        ["-c:a", "libmp3lame", "-b:a", "16k", "-id3v2_version", "3"]
+    subprocess.run(cmd + maps + codec + ["-metadata", f"title={title}", "-metadata", f"artist={artist}",
+                                         "-metadata", f"album={album}", out], check=True)
+    if chapters:
+        os.remove(out + ".txt")
+
+
+FEEDS = [
+    ("morning", "아침 경제", "isoPod 라디오", ((20, 90, 70), (120, 210, 150)), "sun",
+     [("10월 둘째 주 시장 정리", 0, 50), ("금리와 환율 이야기", 3, 40), ("반도체 다시 보기", 9, 45),
+      ("새해 전망 특집", 40, 60)]),
+    ("english", "Six Minutes of English", "Learning Desk", ((30, 40, 90), (90, 140, 230)), "ring",
+     [("Why do we yawn?", 1, 36), ("The joy of slow travel", 8, 36), ("Is coffee good for you?", 15, 36)]),
+]
+
+
+def podcasts(root):
+    """Two shows whose feeds and episodes are files here, the subscriptions to them, and their
+    covers made as isopodd would keep them; run.sh puts the last two in place for each walk."""
+    feeds = os.path.join(root, "feeds")
+    art_dir = os.path.join(feeds, "art")
+    os.makedirs(art_dir, exist_ok=True)
+    now = int(time.time())
+    outlines = []
+    for name, title, author, colors, motif, episodes in FEEDS:
+        art = os.path.join(feeds, name + ".jpg")
+        cover(art, colors, motif, title, author)
+        image = "file://" + art
+        Image.open(art).resize((300, 300)).save(
+            os.path.join(art_dir, hashlib.sha1(image.encode()).hexdigest()[:16] + ".png"))
+        items = []
+        for n, (episode, days, seconds) in enumerate(episodes, 1):
+            audio = os.path.join(feeds, f"{name}-{n}.mp3")
+            spoken(audio, seconds, episode, author, title)
+            when = email.utils.formatdate(now - days * 86400 - 3600, usegmt=True)
+            items.append(f"<item><title>{escape(episode)}</title><guid>{name}-{n}</guid><pubDate>{when}</pubDate>"
+                         f"<itunes:duration>{seconds}</itunes:duration>"
+                         f'<enclosure url="file://{audio}" type="audio/mpeg" length="{os.path.getsize(audio)}"/></item>')
+        feed = os.path.join(feeds, name + ".xml")
+        with open(feed, "w", encoding="utf-8") as f:
+            f.write('<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0" '
+                    'xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel>'
+                    f"<title>{escape(title)}</title><itunes:author>{escape(author)}</itunes:author>"
+                    f'<itunes:image href="{image}"/>' + "".join(items) + "</channel></rss>\n")
+        outlines.append(f'<outline type="rss" text="{escape(title)}" xmlUrl="file://{feed}" imageUrl="{image}"/>')
+    with open(os.path.join(feeds, "Subscriptions.opml"), "w", encoding="utf-8") as f:
+        f.write('<?xml version="1.0" encoding="utf-8"?>\n<opml version="2.0"><body>'
+                + "".join(outlines) + "</body></opml>\n")
+
+
+def audiobooks(root):
+    """A book in a folder of chapters, one split into two discs, and one file with chapters inside."""
+    books = os.path.join(root, "audiobooks")
+    prince = os.path.join(books, "어린 왕자")
+    os.makedirs(prince, exist_ok=True)
+    art = os.path.join(prince, "cover.jpg")
+    cover(art, ((250, 214, 120), (90, 120, 200)), "ring", "어린 왕자", "생텍쥐페리")
+    for n, (title, seconds) in enumerate([("비행사", 40), ("양을 그려 줘", 35), ("소행성 B612", 30),
+                                          ("바오밥나무", 30), ("장미", 45), ("여우", 50), ("우물", 30),
+                                          ("별", 35), ("뱀", 30), ("작별", 40)], 1):
+        spoken(os.path.join(prince, f"{n}장 {title}.mp3"), seconds, title, "생텍쥐페리", "어린 왕자")
+    hound = os.path.join(books, "Arthur Conan Doyle", "The Hound of the Baskervilles")
+    for disc in (1, 2):
+        os.makedirs(os.path.join(hound, f"CD {disc}"), exist_ok=True)
+        for n in (1, 2):
+            spoken(os.path.join(hound, f"CD {disc}", f"{n:02d} Track.mp3"), 30, f"Part {disc}.{n}",
+                   "Arthur Conan Doyle", "The Hound of the Baskervilles")
+    austen = os.path.join(books, "Jane Austen")
+    os.makedirs(austen, exist_ok=True)
+    art = os.path.join(root, "austen.jpg")
+    cover(art, ((236, 222, 196), (150, 90, 110)), "waves", "Pride and Prejudice", "Jane Austen")
+    spoken(os.path.join(austen, "Pride and Prejudice.m4b"), 90, "Pride and Prejudice", "Jane Austen",
+           "Pride and Prejudice", art=art,
+           chapters=[(0, 30, "Chapter 1"), (30, 55, "Chapter 2"), (55, 90, "Chapter 3")])
+    os.remove(art)
+
+
 if __name__ == "__main__":
     main(sys.argv[1])
+    podcasts(sys.argv[1])
+    audiobooks(sys.argv[1])

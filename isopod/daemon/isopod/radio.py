@@ -158,20 +158,20 @@ class Directory:
             return await asyncio.to_thread(self._get, path)
 
 
-def download(url):
+def download(url, limit=LOGO_BYTES, timeout=LOGO_SECONDS):
     """A logo, or nothing: what is too big, too slow or not on the web is not a logo."""
     if not url.startswith(WEB):
         return b""
     try:
         request = urllib.request.Request(WIKIMEDIA.sub(r"\g<1>250\2", url), headers={"User-Agent": USER_AGENT})
-        with urllib.request.urlopen(request, timeout=LOGO_SECONDS) as response:
-            data = response.read(LOGO_BYTES + 1)
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            data = response.read(limit + 1)
     except (OSError, ValueError, http.client.HTTPException):
         return b""
-    return data if len(data) <= LOGO_BYTES else b""
+    return data if len(data) <= limit else b""
 
 
-def shrink(data, path):
+def shrink(data, path, side=LOGO_SIDE):
     """Stations give logos of any kind and size. isopod-thumb, which reads what the shell
     reads, leaves a small PNG at path, so the shell never opens a picture it cannot or a
     large one while it draws."""
@@ -179,7 +179,7 @@ def shrink(data, path):
     with open(part, "wb") as f:
         f.write(data)
     try:
-        return subprocess.run(["isopod-thumb", part, path, str(LOGO_SIDE)], timeout=10).returncode == 0
+        return subprocess.run(["isopod-thumb", part, path, str(side)], timeout=10).returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
     finally:

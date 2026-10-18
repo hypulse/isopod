@@ -80,10 +80,27 @@ def on_air(d, cx, cy, k, width):
         arc(d, cx, cy, r * k, -45, 45, width)
 
 
+def microphone(d, cx, cy, k, width):
+    """A podcast: a microphone's head, the waves around it open below, and its stem."""
+    ellipse(d, cx - 10 * k, cy - 10 * k, cx + 10 * k, cy + 10 * k)
+    rrect(d, cx - 6.5 * k, cy + 17 * k, cx + 6.5 * k, cy + 46 * k, 6.5 * k)
+    for r in (25, 41):
+        arc(d, cx, cy, r * k, 140, 400, width)
+
+
 def headphones(d, ox, oy, k, width):
     arc(d, ox + 20 * k, oy + 21 * k, 16 * k, 180, 360, width * k)
     rrect(d, ox + 2 * k, oy + 20 * k, ox + 10 * k, oy + 36 * k, 3 * k)
     rrect(d, ox + 30 * k, oy + 20 * k, ox + 38 * k, oy + 36 * k, 3 * k)
+
+
+def listening_book(d, ox, oy, k, width):
+    """An audiobook: an open book between the cups of a pair of headphones."""
+    headphones(d, ox, oy, k, width)
+    poly(d, [(ox + 12.5 * k, oy + 22 * k), (ox + 19 * k, oy + 23.5 * k), (ox + 19 * k, oy + 35 * k),
+             (ox + 12.5 * k, oy + 33.5 * k)])
+    poly(d, [(ox + 21 * k, oy + 23.5 * k), (ox + 27.5 * k, oy + 22 * k), (ox + 27.5 * k, oy + 33.5 * k),
+             (ox + 21 * k, oy + 35 * k)])
 
 
 def speaker_body(d, ox, oy, k):
@@ -128,6 +145,9 @@ def empty_icons(P):
         poly(d, [(38, 27.5), (57, 24), (57, 46.5), (38, 50)])
     glyph("book", book)
 
+    glyph("podcast", lambda d: microphone(d, 36, 31, 0.5, 3))
+    glyph("audiobook", lambda d: listening_book(d, 18, 17, 0.9, 3.4))
+
 
 
 def glyphs(P):
@@ -150,6 +170,8 @@ def glyphs(P):
     glyph("book", book)
 
     glyph("radio", lambda d: on_air(d, 64, 64, 1.0, 7))
+    glyph("podcast", lambda d: microphone(d, 64, 50, 1.0, 7))
+    glyph("audiobook", lambda d: listening_book(d, 22, 20, 2.1, 3.6))
 
     def settings(d):
         for i in range(8):
@@ -319,6 +341,13 @@ def build(out):
     empty_icons(P)
     glyphs(P)
 
+    # On the card: an arrow come down to its line.
+    img, d = canvas(18, 18)
+    line(d, [(9, 2), (9, 10)], 2.4)
+    poly(d, [(4, 8), (14, 8), (9, 13.5)])
+    line(d, [(3, 16.2), (15, 16.2)], 2.2)
+    done(img, 18, 18, P("saved"))
+
     img, d = canvas(80, 80)
     speaker_body(d, 10, 18, 1.1)
     arc(d, 34, 40, 11, -50, 50, 4)
@@ -385,6 +414,12 @@ def art(out):
     on_air(d, 64, 64, 0.82, 6)
     base.paste(tint, (0, 0), glyph.resize((size, size), Image.LANCZOS))
     base.convert("RGB").save(os.path.join(out, "art-radio.png"))
+
+    base = gradient(size, (244, 244, 246), (206, 206, 212))
+    glyph, d = canvas(128, 128)
+    microphone(d, 64, 50, 0.82, 6)
+    base.paste(tint, (0, 0), glyph.resize((size, size), Image.LANCZOS))
+    base.convert("RGB").save(os.path.join(out, "art-podcast.png"))
 
 
 PILL_BUG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "art", "pill-bug.png")

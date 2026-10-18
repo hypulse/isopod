@@ -16,6 +16,7 @@ LYRIC_EXTS = (".lrc", ".txt")
 PLAYLIST_EXTS = (".m3u", ".m3u8")
 STREAM_PREFIXES = ("http://", "https://", "hls+http://", "hls+https://")
 FAVORITES = "Favorites.m3u"
+SKIP_BACK, SKIP_AHEAD = 15, 30
 
 
 def _int(value, default=0):
@@ -48,6 +49,37 @@ def _tails(files):
             tails[tail] = None if tail in tails else file
     tails.update((_fold(file), file) for file in files)
     return tails
+
+
+def local(uri):
+    """A file outside the music folder, as MPD may give it back: with file:// or without."""
+    return uri[7:] if uri.startswith("file://") else uri
+
+
+class Spoken:
+    """What is listened to rather than played: an episode of a podcast or an audiobook. It
+    keeps its place, and the one who made it is told where that is as it plays."""
+
+    kind = "podcast"
+
+    def __init__(self, key, uris, title, artist="", art=None):
+        self.key = key
+        self.uris = list(uris)
+        self.title = title
+        self.artist = artist
+        self.art = art
+
+    def index(self, uri):
+        """Which of its files the address is, None if it is none of them."""
+        plain = [local(u) for u in self.uris]
+        return plain.index(local(uri)) if local(uri) in plain else None
+
+    def album(self, index, elapsed):
+        """The line under the artist's: the chapter, where there are chapters."""
+        return ""
+
+    def heard(self, index, elapsed, duration, force=False):
+        pass
 
 
 def stream_urls(url):
@@ -89,6 +121,9 @@ class Music:
         self.station_favorite = lambda station: False
         self.step_station = None
         self.station = None
+        # Podcasts and audiobooks know their own files, by their addresses.
+        self.identify = lambda uri: None
+        self.spoken = None
         self.songs = []
         self.favorites = []
         self.playlist_files = []
@@ -101,6 +136,7 @@ class Music:
         self._rescan = None
         self._stream_watch = None
         self._stream_url = None
+        self._ticker = None
         state.adjusters.append(self._live_elapsed)
 
     def on_library_change(self, fn):
@@ -193,8 +229,24 @@ class Music:
         uri = song.get("file", "")
         if uri != self.state.get("player").get("file"):
             self.song_changed()
-        radio = uri.startswith(STREAM_PREFIXES)
-        if radio:
+        tuned = self.station and uri == self._stream_url
+        spoken = None if tuned else self._spoken_for(uri)
+        radio = not spoken and uri.startswith(STREAM_PREFIXES)
+        kind = "radio" if radio else spoken.kind if spoken else "song"
+        if spoken:
+            index = spoken.index(uri)
+            duration = _float(status.get("duration") or song.get("duration"))
+            about = dict(title=spoken.title, artist=spoken.artist, album=spoken.album(index, elapsed),
+                         art=spoken.art, favorite=False, duration=duration,
+                         buffering=playing == "play" and not status.get("audio"))
+            before = self.state.get("player")
+            if uri == before.get("file") and about["album"] != before["album"]:
+                self.song_changed()  # wound into another chapter: Now Playing says which
+            if playing != "stop":
+                spoken.heard(index, elapsed, duration, force=playing == "pause")
+            if playing == "play" and not self._ticker:
+                self._ticker = spawn(self._tick())
+        elif radio:
             # A station is shown by its own name; what it says is on is the line under it.
             station = self.station if self.station and uri == self._stream_url else {}
             about = dict(title=station.get("name") or song.get("name") or uri, artist=song.get("title", ""),
@@ -209,12 +261,41 @@ class Music:
                          favorite=uri in self.favorites, buffering=False,
                          duration=_float(status.get("duration") or song.get("duration")))
         self.state.update(
-            "player", state=playing if song else "stop", kind="radio" if radio else "song", file=uri,
+            "player", state=playing if song else "stop", kind=kind, file=uri,
             elapsed=elapsed, pos=_int(status.get("song"), -1) + 1, count=_int(status.get("playlistlength")),
             shuffle=status.get("random") == "1", repeat=status.get("repeat") == "1",
             single=status.get("single") == "1", **about)
         if abs(shown - elapsed) > 1:
             self.state.resend()
+
+    def _spoken_for(self, uri):
+        if not uri:
+            return None
+        if self.spoken and self.spoken.index(uri) is not None:
+            return self.spoken
+        found = self.identify(uri)
+        if found:
+            self.spoken = found
+        return found
+
+    async def _tick(self, every=5):
+        """While an episode or a book plays it is told where it is, and its chapter follows."""
+        try:
+            while True:
+                await asyncio.sleep(every)
+                player = self.state.get("player")
+                spoken = self.spoken
+                index = spoken.index(player.get("file") or "") if spoken else None
+                if index is None or player["state"] != "play":
+                    return
+                elapsed = self._position()
+                spoken.heard(index, elapsed, player["duration"])
+                chapter = spoken.album(index, elapsed)
+                if chapter != player["album"]:
+                    self.state.update("player", album=chapter)
+                    self.song_changed()
+        finally:
+            self._ticker = None
 
     def _position(self):
         base, at = self._elapsed
@@ -291,7 +372,7 @@ class Music:
         """(lines, times or None) for the song playing: an .lrc or .txt beside the file first,
         then lyrics tags MPD can read. None when there are none."""
         uri = self.state.get("player").get("file") or ""
-        if not uri or uri.startswith(STREAM_PREFIXES):
+        if not uri or uri.startswith(STREAM_PREFIXES) or self._on_spoken():
             return None
         for path in self._lyric_files(uri):
             try:
@@ -406,7 +487,7 @@ class Music:
     async def play_songs(self, songs, index=0):
         if not songs:
             return
-        self.station = None
+        self.station = self.spoken = None
         cmds = [("clear",), ("random", "0")] + [("add", s["file"]) for s in songs]
         cmds.append(("play", str(max(0, min(index, len(songs) - 1)))))
         await self.mpd.call_list(cmds)
@@ -419,6 +500,7 @@ class Music:
     async def play_stream(self, station):
         """Show the station at once; MPD stays silent while the stream connects."""
         self.station = station
+        self.spoken = None
         urls = stream_urls(station["url"])
         if urls[0] != self.state.get("player").get("file"):
             self.song_changed()
@@ -461,6 +543,52 @@ class Music:
         self.stream_failed()
         await self.refresh()
 
+    async def play_spoken(self, spoken, index=0, start=0.0):
+        """An episode or a book, from where it was left. Repeat and shuffle are a song's."""
+        self.station = None
+        self.spoken = spoken
+        if self._stream_watch:
+            self._stream_watch.cancel()
+        cmds = [("clear",), ("random", "0"), ("repeat", "0"), ("single", "0")]
+        cmds += [("add", uri) for uri in spoken.uris]
+        if start < 1:
+            await self.mpd.call_list(cmds + [("play", str(index))])
+        else:
+            await self.mpd.call_list(cmds)
+            try:
+                await self.mpd.call("seek", str(index), f"{start:.1f}")
+            except MPDError:
+                # A stream that cannot be wound starts from its beginning.
+                await self.mpd.call("play", str(index))
+        if spoken.uris[index].startswith(STREAM_PREFIXES):
+            self._stream_watch = spawn(self._watch_spoken(spoken))
+
+    async def _watch_spoken(self, spoken, patience=20):
+        """An episode from the web that does not start is said to be out of reach."""
+        deadline = time.monotonic() + patience
+        while time.monotonic() < deadline:
+            await asyncio.sleep(0.5)
+            if self.spoken is not spoken:
+                return
+            try:
+                status = await self._status()
+            except MPDError:
+                return
+            if status.get("error"):
+                break
+            if status.get("audio") or status.get("state") != "play":
+                return
+        try:
+            await self.mpd.call_list([("clearerror",), ("stop",)])
+        except MPDError:
+            pass
+        log.warning("episode did not start: %s", spoken.uris[0])
+        self.stream_failed()
+        await self.refresh()
+
+    async def seek_to(self, seconds):
+        await self.mpd.call("seekcur", f"{max(0.0, seconds):.1f}")
+
     def station_logo(self, station, path):
         """The logo of the station that is on came in after it was tuned in."""
         if self.station and self.station.get("favicon") == station.get("favicon"):
@@ -470,6 +598,9 @@ class Music:
 
     def _on_radio(self):
         return self.state.get("player")["kind"] == "radio"
+
+    def _on_spoken(self):
+        return self.state.get("player")["kind"] in ("podcast", "audiobook")
 
     async def enqueue(self, song, next_up=False):
         if next_up:
@@ -501,7 +632,15 @@ class Music:
     async def next(self):
         if self._on_radio():
             return await self._step(1)
+        if self._on_spoken():
+            return await self.skip(SKIP_AHEAD)
         await self.mpd.call("next")
+
+    async def skip(self, delta):
+        """Spoken words go back and ahead by a sentence or two, not to the next file."""
+        duration = self.state.get("player")["duration"]
+        target = self._position() + delta
+        await self.seek_to(min(target, duration - 1) if duration > 0 else target)
 
     async def _step(self, delta):
         """On the radio the next and the previous are stations, not songs."""
@@ -511,6 +650,8 @@ class Music:
     async def previous(self):
         if self._on_radio():
             return await self._step(-1)
+        if self._on_spoken():
+            return await self.skip(-SKIP_BACK)
         if self._position() > 3 or self.state.get("player")["pos"] <= 1:
             await self.mpd.call("seekcur", "0")
         else:

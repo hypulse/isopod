@@ -5,7 +5,7 @@
 # Over the cable a computer gets the libraries by MTP. ROCKNIX's usbgadget starts
 # umtprd with /etc/umtprd/umtprd.conf, which lists /storage/roms, so isoPod's covers it,
 # before 081-usbgadget starts the gadget in the mode ROCKNIX remembers.
-mkdir -p /storage/music /storage/videos /storage/books /storage/.update
+mkdir -p /storage/music /storage/videos /storage/books /storage/audiobooks /storage/podcasts /storage/.update
 grep -qs " /etc/umtprd/umtprd.conf " /proc/mounts ||
   mount --bind /usr/share/isopod/umtprd.conf /etc/umtprd/umtprd.conf
 

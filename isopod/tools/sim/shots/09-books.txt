@@ -11,6 +11,6 @@ key confirm
 wait 1500
 daemon home
 wait 900
-hold up 8
+hold up 12
 key up
 shot 04-open-book.png
