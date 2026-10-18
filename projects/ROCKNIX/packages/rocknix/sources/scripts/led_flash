@@ -16,6 +16,25 @@ else
   FLASH_COLOR="${COLOR}"
 fi
 
+restore() {
+  if [ -n "${COLOR}" ]
+  then
+    ledcontrol ${COLOR}
+  else
+    ledcontrol default
+  fi
+
+  if [ "${DEVICE_LED_BRIGHTNESS}" = "true" ]
+  then
+    ledcontrol brightness ${BRI}
+  fi
+}
+
+# ledcontrol saves what it shows as the chosen setting, so put the choice back
+# also when sleep or shutdown stops powerstate in the middle of a flash
+trap restore EXIT
+trap "exit 1" HUP INT TERM
+
 if [ "${DEVICE_LED_BRIGHTNESS}" = "true" ]
 then
   ledcontrol brightness mid
@@ -28,15 +47,3 @@ do
   ledcontrol poweroff
   sleep .5
 done
-
-if [ -n "${COLOR}" ]
-then
-  ledcontrol ${COLOR}
-else
-  ledcontrol default
-fi
-
-if [ "${DEVICE_LED_BRIGHTNESS}" = "true" ]
-then
-  ledcontrol brightness ${BRI}
-fi
