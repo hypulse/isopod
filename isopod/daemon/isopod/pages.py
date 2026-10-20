@@ -2,8 +2,8 @@ import asyncio
 import datetime
 import logging
 import os
+import random
 import secrets
-import zlib
 
 from .countries import NAMES as COUNTRIES, country_name
 from .extras import AppError, Refused
@@ -75,6 +75,8 @@ class Pages:
         self.app = app
         self._tokens = {}
         self._art_jobs = set()
+        self._art_seeds = {}
+        self._away = False
         self._lineup = (None, [], 0)
         self._listed = {}  # a list app's rows by page, for what a press on one means
 
@@ -98,6 +100,8 @@ class Pages:
 
     async def build(self, path):
         parts = split_path(path)
+        if parts:
+            self._away = True  # somewhere other than home: it draws new covers when come back to
         handler = getattr(self, "_page_" + (parts[0] if parts else "root"), None)
         if handler is None:
             return page(path, "", [], empty=empty(None, self.t("empty_list")))
@@ -132,22 +136,37 @@ class Pages:
             self.app.power.apply_brightness()
 
     def leave(self, path):
+        self._art_seeds.pop(path, None)
         if path == "/settings/bluetooth":
             self.app.bluetooth.end_discovery()
 
     # root --------------------------------------------------------------------
 
     def _art_pool(self, path, limit=16):
-        """Album covers for the artwork panel beside split menus, in a stable shuffled order."""
+        """Album covers for the artwork panel beside split menus: a handful drawn from all the
+        albums, anew each time the menu is come back to and the same while it is open, for the
+        page is fetched again as the music changes and a cover must not change under the eye.
+        Albums whose cover is not yet read have it read behind the menu."""
         m = self.app.music
+        seed = self._art_seeds.setdefault(path, random.getrandbits(32))
         albums = m.albums()
-        pool = [a for a in (m._art_for(f) for _, f in albums) if a]
-        if len(pool) < min(limit, len(albums)):
-            self._prefetch_art(path, [f for _, f in albums[:limit * 2]])
-        pool.sort(key=lambda p: zlib.crc32(os.path.basename(p).encode()))
-        return pool[:limit]
+        covers, missing = [], []
+        for _, file in random.Random(seed).sample(albums, len(albums)):
+            art = m._art_for(file)
+            if art:
+                covers.append(art)
+            elif len(missing) < limit:
+                missing.append(file)
+            if len(covers) >= limit:
+                break
+        if missing and len(covers) < limit:
+            self._prefetch_art(path, missing)
+        return covers
 
     async def _page_root(self, path, rest):
+        if self._away:
+            self._away = False
+            self._art_seeds.pop(path, None)
         t = self.t
         items = [
             item("music", t("music"), preview="art"),

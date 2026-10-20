@@ -22,7 +22,7 @@ from isopod import uevents  # noqa: E402
 from isopod.battery import Battery  # noqa: E402
 from isopod.bluetooth import A2DP_SINK, Backend, Bluetooth, Device, RavelBackend  # noqa: E402
 from isopod.mpd import MPD, filter_expr, quote, records, values  # noqa: E402
-from isopod.music import Music  # noqa: E402
+from isopod.music import Music, Song  # noqa: E402
 from isopod.pages import VIDEO_EXTS, Pages, folder_listing  # noqa: E402
 from isopod.apps import AppSpec, Apps, prepare_koreader  # noqa: E402
 from isopod.i18n import Translator  # noqa: E402
@@ -160,6 +160,48 @@ class CoverFlowOrderTest(unittest.IsolatedAsyncioTestCase):
         order = [key for key, _ in music.coverflow_albums()]
         self.assertEqual(order, [("Aurora Lane", "Night Drive"), ("Aurora Lane", "Paper Planes"),
                                  ("The Owls", "Quiet Hours"), ("나무", "가을")])
+
+
+class ArtPanelTest(unittest.IsolatedAsyncioTestCase):
+    """The covers beside the home and music menus: drawn from all the albums, the same while
+    a menu is open, new each time it is come back to."""
+
+    async def asyncSetUp(self):
+        class NoApp:
+            t = Translator("en")
+            state = State(lambda snap: None)
+
+            def page_changed(self, *paths):
+                pass
+        d = tempfile.mkdtemp()
+        app = self.app = NoApp()
+        app.music = Music(None, app.state, d, music_dir=d)
+        app.music.songs = [Song(file=f"{n:03d}.mp3", title=str(n), artist="A", albumartist="A", album=f"Album {n:03d}",
+                                genre="", year="", track=1, disc=0, duration=1.0) for n in range(120)]
+        os.makedirs(app.music.art_dir)
+        for song in app.music.songs:
+            app.music._by_file[song["file"]] = song
+            open(os.path.join(app.music.art_dir, app.music._art_key(song["file"]) + ".jpg"), "w").close()
+        self.pages = Pages(app)
+
+    async def art(self, path):
+        return (await self.pages.build(path))["art"]
+
+    async def test_a_menu_keeps_its_covers_while_open_and_draws_new_ones_when_come_back_to(self):
+        first = await self.art("/music")
+        self.assertEqual(len(first), 16)
+        self.assertEqual(await self.art("/music"), first, "fetched again as the music changes")
+        self.pages.leave("/music")
+        self.assertNotEqual(await self.art("/music"), first, "left and opened again")
+        names = {os.path.basename(a) for a in first}
+        alphabetical = {os.path.basename(self.app.music._art_for(f)) for _, f in self.app.music.albums()[:32]}
+        self.assertFalse(names <= alphabetical, "from all the albums, not the first ones by name")
+
+    async def test_home_draws_new_covers_once_something_else_was_open(self):
+        home = await self.art("/")
+        self.assertEqual(await self.art("/"), home, "reloaded while it is in front")
+        await self.pages.build("/music/albums")
+        self.assertNotEqual(await self.art("/"), home)
 
 
 class NoAlbumTest(unittest.IsolatedAsyncioTestCase):

@@ -279,14 +279,14 @@ def _settings(d):
 
 
 def _playlist(d):
-    """Three lines of a list and an eighth whose flag curls from the stem's top to a point."""
-    for y, end in ((25, 46), (40, 46), (55, 34)):
-        _g_line(d, [(12, y), (end, y)], 7)
-    right = _g_head(d, 58, 66, 10.5, 8)
-    _g_poly(d, [(right - NOTE_STEM, 66), (right, 66), (right, 17), (right - NOTE_STEM, 17)])
-    outer = _g_curve((right - NOTE_STEM, 17), (right + 15.5, 23), (right + 11.5, 45))
-    inner = _g_curve((right + 11.5, 45), (right + 9, 31), (right - NOTE_STEM, 31))
-    _g_poly(d, outer + inner)
+    """Playlists, Favorites the first of them: the star that marks a favorite, filled, its
+    points a little round. A star is lighter than its outline, so it is drawn a little larger
+    than the other glyphs, and set by its weight's middle rather than its outline's."""
+    r, soft, cx, cy = 35, 3.4, 44, 44.5
+    pts = [(cx + k * math.sin(i * math.pi / 5), cy - k * math.cos(i * math.pi / 5))
+           for i, k in enumerate([r - soft, (r - soft) * 0.5] * 5)]
+    _g_poly(d, pts)
+    _g_line(d, pts + pts[:1], soft * 2)
 
 
 def _genre(d):
