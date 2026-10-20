@@ -30,7 +30,7 @@ fi
 # A Mac leaves a "._name" beside each file it copies to a card; those are not songs.
 [ -e /storage/music/.mpdignore ] || echo '._*' >/storage/music/.mpdignore
 
-# sshd takes keys alone and waits for one (sshd.service.d/isopod.conf): a computer's public
+# sshd takes keys alone and waits for one (sshd.socket.d, sshd@.service.d): a computer's public
 # key comes over the cable, as a file named authorized_keys in the update folder, and is
 # taken from there if it holds a key.
 if ssh-keygen -l -f /storage/.update/authorized_keys >/dev/null 2>&1; then
