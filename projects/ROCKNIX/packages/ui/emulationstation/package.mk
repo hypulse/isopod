@@ -2,8 +2,8 @@
 # Copyright (C) 2024-present ROCKNIX (https://github.com/ROCKNIX)
 
 PKG_NAME="emulationstation"
-PKG_VERSION="cada856d86e3115fbbf0bce09dd761b0ee8fa9fd"
-PKG_SHA256="c92eb0fd6e1e2b5fa603391f6c0b540d4fad858664c23321237df32efecf68ad"
+PKG_VERSION="3fdbad9381c0a536a175b3562c5dc371acab6518"
+PKG_SHA256="a43ac1dd5fa68a739394494ba0896b0801f06f217187c1e77355f93b8f0b3235"
 PKG_LICENSE="GPL"
 PKG_SITE="https://github.com/ROCKNIX/emulationstation-next"
 PKG_URL="${PKG_SITE}/archive/${PKG_VERSION}.tar.gz"
@@ -11,6 +11,7 @@ PKG_DEPENDS_TARGET="boost toolchain SDL2 freetype curl freeimage bash rapidjson 
 PKG_NEED_UNPACK="busybox"
 PKG_LONGDESC="Emulationstation emulator frontend"
 PKG_BUILD_FLAGS="-gold"
+PKG_PATCH_DIRS+=" ${DEVICE}"
 
 PKG_CMAKE_OPTS_TARGET+=" -DROCKNIX=1 \
                          -DDISABLE_KODI=1 \

@@ -103,18 +103,22 @@
     <file>rk3588s-retro-lite-cm5</file>
     <file>rk3588s-retroled-cm5</file>
   </RK3588>
-  <S922X mkimage_options="dtb,extlinux,gou_extras,uboot" fdt_type="fdtdir" dtb_prefix="amlogic">
+  <S922X mkimage_options="dtb,extlinux,uboot" fdt_type="fdtdir" dtb_prefix="amlogic">
     <file>meson-g12b-odroid-go-ultra</file>
     <file>meson-g12b-powkiddy-rgb10-max-3-pro</file>
   </S922X>
   <SM4450 mkimage_options="abl" dtb_prefix="qcom">
     <file>sm4450-anbernic-rg55g1</file>
+    <file>sm4450-retroid-pocket-classic</file>
     <file>sm4450-retroid-pocket-classic-revq</file>
+    <file>sm4450-retroid-pocket-classic-6-revq</file>
   </SM4450>
   <SM6115 mkimage_options="abl" dtb_prefix="qcom">
     <file>sm6115-mangmi-air-x-mq66</file>
     <file>sm6115-mangmi-air-x-mq66b</file>
     <file>sm6115-mangmi-air-x-mq65</file>
+    <file>sm6115-mangmi-air-y</file>
+    <file>sm6125-retroid-pocket-duo-lite</file>
   </SM6115>
   <SM8250 mkimage_options="abl" dtb_prefix="qcom">
     <file>sm8250-retroidpocket-rp5</file>
