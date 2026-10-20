@@ -80,10 +80,11 @@ class Nmcli:
         await self.refresh(rescan=True)
 
     async def set_enabled(self, on):
+        # NetworkManager keeps a switch of its own and comes up with it off after a boot
+        # with Wi-Fi off; ROCKNIX's wifictl moves only the radio's.
         if shutil.which("wifictl"):
             await run("wifictl", "enable" if on else "disable", timeout=30)
-        else:
-            await run("nmcli", "radio", "wifi", "on" if on else "off")
+        await run("nmcli", "radio", "wifi", "on" if on else "off")
         await self.refresh()
 
     async def connect(self, ssid, password=None):

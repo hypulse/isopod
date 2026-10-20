@@ -34,7 +34,7 @@ from isopod.settings import Settings  # noqa: E402
 from isopod.state import State  # noqa: E402
 from isopod.system import System  # noqa: E402
 from isopod.util import enc, fmt_duration, index_letter, matches, sort_key, spawn, split_path  # noqa: E402
-from isopod.wifi import FakeWifi, Wifi, parse_terse  # noqa: E402
+from isopod.wifi import FakeWifi, Nmcli, Wifi, parse_terse  # noqa: E402
 
 
 class UtilTest(unittest.TestCase):
@@ -1899,6 +1899,25 @@ class WifiSwitchTest(unittest.IsolatedAsyncioTestCase):
         await wifi.set_enabled(False)
         await wifi.set_enabled(True)
         self.assertEqual(told, [False, True])
+
+    async def test_networkmanager_hears_of_the_switch_as_well_as_the_radio(self):
+        from isopod import wifi as module
+        calls = []
+
+        async def run(*args, **kwargs):
+            calls.append(args)
+            return 0, "", ""
+
+        saved = module.run, module.shutil.which
+        module.run, module.shutil.which = run, lambda name: "/usr/bin/" + name
+        try:
+            await Nmcli().set_enabled(True)
+            await Nmcli().set_enabled(False)
+        finally:
+            module.run, module.shutil.which = saved
+        switches = [c for c in calls if c[0] == "wifictl" or c[1] == "radio"]
+        self.assertEqual(switches, [("wifictl", "enable"), ("nmcli", "radio", "wifi", "on"),
+                                    ("wifictl", "disable"), ("nmcli", "radio", "wifi", "off")])
 
 
 class SavedNetworkTest(unittest.IsolatedAsyncioTestCase):
