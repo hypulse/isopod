@@ -1,6 +1,7 @@
 import asyncio
+import concurrent.futures
 import datetime
-import email.utils
+import gzip
 import hashlib
 import http.client
 import json
@@ -22,19 +23,18 @@ log = logging.getLogger("isopod.podcasts")
 APPLE = "https://itunes.apple.com"
 STORES = {"ko": "kr", "en": "us"}
 SUBSCRIPTIONS = "Subscriptions.opml"
-FEED_LIFE = 3600  # a show's episodes are asked for again once what is kept is an hour old
+LIFE = 3600  # a show's episodes are asked for again once what is kept is an hour old
 TOP_LIFE = 24 * 3600
 RETRY = 600
-KEEP = 300  # the newest episodes of a show; some have thousands
-FEED_BYTES = 20 << 20
+EPISODES = 200  # the most Apple gives of a show: its newest
 TIMEOUT = 20
 ART_BYTES, ART_SIDE, ART_SECONDS = 8 << 20, 400, 15
 NEW = 14 * 24 * 3600  # what came out up to two weeks before a show was subscribed to is new too
-SAVE_EVERY = 15
+SAVE_EVERY = 60
+HEARD_KEPT = 2000  # places of episodes heard, the most recent kept
 DONE_LEFT = 30  # an episode is heard once no more than its last half minute is left, or tenth
 CHUNK = 1 << 16
-TYPES = {"audio/mpeg": ".mp3", "audio/mp3": ".mp3", "audio/mp4": ".m4a", "audio/x-m4a": ".m4a", "audio/aac": ".aac",
-         "audio/ogg": ".ogg", "audio/opus": ".opus", "audio/wav": ".wav", "audio/x-wav": ".wav", "video/mp4": ".mp4"}
+WEB = ("http://", "https://")
 EXTS = (".mp3", ".m4a", ".m4b", ".mp4", ".aac", ".ogg", ".oga", ".opus", ".flac", ".wav", ".m4v", ".mov")
 
 
@@ -42,142 +42,152 @@ class PodcastError(Exception):
     pass
 
 
-def _id(*parts):
-    return hashlib.sha1("\0".join(parts).encode()).hexdigest()[:16]
+class NotListed(PodcastError):
+    """A show Apple's directory does not have."""
 
 
-def show_id(url):
-    return _id(url)
-
-
-def fetch(url, limit=FEED_BYTES, timeout=TIMEOUT):
-    """What is at an address, or PodcastError."""
+def fetch(url, limit=8 << 20, timeout=TIMEOUT):
+    """What is at an address, sent compressed where the server can, or PodcastError."""
     try:
-        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept-Encoding": "gzip"})
         with urllib.request.urlopen(request, timeout=timeout) as response:
             data = response.read(limit + 1)
-    except (OSError, ValueError, http.client.HTTPException) as e:
+            if response.headers.get("Content-Encoding") == "gzip":
+                data = gzip.decompress(data)
+    except (OSError, ValueError, EOFError, http.client.HTTPException) as e:
         raise PodcastError(str(e) or type(e).__name__) from None
     if len(data) > limit:
         raise PodcastError("too big")
     return data
 
 
-# feeds -----------------------------------------------------------------------
-
-def _split(tag):
-    if not isinstance(tag, str):
-        return None, ""
-    if tag.startswith("{"):
-        ns, _, name = tag[1:].partition("}")
-        return ns.lower(), name
-    return "", tag
+def web(url):
+    """An address as a web client sends it: spaces and Hangul in it escaped."""
+    return urllib.parse.quote(url.strip(), safe=":/?#[]@!$&'()*+,;=%~")
 
 
-def _child(el, name, itunes=False):
-    """The first child of that name: one of iTunes', in whatever case a feed spells its
-    namespace, or one of RSS's own."""
-    if el is None:
-        return None
-    for child in el:
-        ns, tag = _split(child.tag)
-        if tag == name and (("itunes.com/dtds" in ns) if itunes else ns == ""):
-            return child
-    return None
-
-
-def _text(el):
-    return " ".join((el.text or "").split()) if el is not None else ""
-
-
-def _int(text):
+def final_address(url, timeout=10):
+    """Where an episode's address leads. Listeners are counted by redirects put in front of
+    the file, and MPD follows five of them where some episodes have six or more."""
     try:
-        return int(text)
-    except (TypeError, ValueError):
-        return 0
+        request = urllib.request.Request(web(url), headers={"User-Agent": USER_AGENT, "Range": "bytes=0-0"})
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.geturl()
+    except (OSError, ValueError, http.client.HTTPException):
+        return url
 
 
-def parse_duration(text):
-    """iTunes' duration: seconds, M:SS or H:MM:SS."""
+def _when(text):
+    """Apple's times, which are in UTC: 2026-10-20T00:18:22Z."""
     try:
-        parts = [float(p) for p in (text or "").strip().split(":")]
+        return int(datetime.datetime.fromisoformat((text or "").replace("Z", "+00:00")).timestamp())
     except ValueError:
         return 0
-    seconds = 0.0
-    for part in parts:
-        seconds = seconds * 60 + part
-    return int(seconds)
 
 
-def parse_date(text):
-    """An episode's day, in RSS's form or ISO's; one that names no zone is in UTC."""
-    text = (text or "").strip()
-    try:
-        when = email.utils.parsedate_to_datetime(text)
-    except (TypeError, ValueError, IndexError, OverflowError):
+# Apple's directory -----------------------------------------------------------
+
+def _show(raw):
+    return {"id": str(raw["collectionId"]), "title": (raw.get("collectionName") or "").strip(),
+            "author": (raw.get("artistName") or "").strip(),
+            "image": raw.get("artworkUrl600") or raw.get("artworkUrl100") or "",
+            "url": (raw.get("feedUrl") or "").strip()}
+
+
+def _episode(raw):
+    url = (raw.get("episodeUrl") or "").strip()
+    if not url.startswith(WEB):
+        return None
+    ext = "." + (raw.get("episodeFileExtension") or "mp3").lower().lstrip(".")
+    return {"id": str(raw["trackId"]), "title": (raw.get("trackName") or "").strip() or "Episode",
+            "date": _when(raw.get("releaseDate")), "duration": int(raw.get("trackTimeMillis") or 0) // 1000,
+            "url": web(url), "ext": ext if ext in EXTS else ".mp3"}
+
+
+class Apple:
+    """Apple's podcast directory, the one place isoPod asks: shows by name, the chart of a
+    store, and a show's newest episodes as Apple has them from its feed. It reaches feeds
+    that answer Apple alone, and gives small JSON where feeds can be many megabytes."""
+
+    def __init__(self, get=fetch):
+        self._get = get
+
+    def _call(self, path, **params):
+        url = APPLE + path + ("?" + urllib.parse.urlencode(params) if params else "")
         try:
-            when = datetime.datetime.fromisoformat(text.replace("Z", "+00:00"))
+            return json.loads(self._get(url))
         except ValueError:
-            return 0
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=datetime.timezone.utc)
-    return int(when.timestamp())
+            raise PodcastError("not JSON") from None
+
+    def search(self, term, store):
+        raw = self._call("/search", term=term, media="podcast", entity="podcast", limit=50, country=store)
+        return [_show(r) for r in raw.get("results", []) if r.get("collectionId")]
+
+    def top(self, store, limit=100):
+        """The store's chart names its shows; they are looked up after, in its order."""
+        entries = self._call(f"/{store}/rss/toppodcasts/limit={limit}/json").get("feed", {}).get("entry", [])
+        if isinstance(entries, dict):
+            entries = [entries]
+        ids = [i for i in (e.get("id", {}).get("attributes", {}).get("im:id") for e in entries) if i]
+        if not ids:
+            return []
+        found = self._call("/lookup", id=",".join(ids), entity="podcast", country=store)
+        by_id = {str(r.get("collectionId")): r for r in found.get("results", []) if r.get("collectionId")}
+        return [_show(by_id[i]) for i in ids if i in by_id]
+
+    def episodes(self, sid, store):
+        """(the show, its newest episodes, newest first)."""
+        raw = self._call("/lookup", id=sid, entity="podcastEpisode", limit=EPISODES, country=store)
+        results = raw.get("results", [])
+        shows = [r for r in results if r.get("wrapperType") == "track" and r.get("kind") == "podcast"]
+        if not shows:
+            raise NotListed(sid)
+        episodes = [e for e in map(_episode, (r for r in results if r.get("wrapperType") == "podcastEpisode")) if e]
+        return _show(shows[0]), sorted(episodes, key=lambda e: -e["date"])
 
 
-def parse_feed(data, url):
-    """A show and its newest episodes, from its RSS feed. An episode is what has a file."""
-    try:
-        root = ET.fromstring(data)
-    except ET.ParseError as e:
-        raise PodcastError(f"not a feed: {e}") from None
-    channel = _child(root, "channel")
-    if channel is None:
-        raise PodcastError("not a podcast feed")
-    image = _child(channel, "image", itunes=True)
-    art = (image.get("href") or "").strip() if image is not None else ""
-    art = art or _text(_child(_child(channel, "image"), "url"))
-    author = (_text(_child(channel, "author", itunes=True))
-              or _text(_child(_child(channel, "owner", itunes=True), "name", itunes=True)))
-    # Only a feed on the device itself may point at files on it.
-    schemes = ("http://", "https://") + (("file://",) if url.startswith("file://") else ())
-    episodes = []
-    for item in (el for el in channel if _split(el.tag)[1] == "item"):
-        enclosure = _child(item, "enclosure")
-        address = (enclosure.get("url") or "").strip() if enclosure is not None else ""
-        if not address.startswith(schemes):
-            continue
-        guid = _text(_child(item, "guid")) or address
-        episodes.append({
-            "id": _id(url, guid),
-            "title": _text(_child(item, "title")) or _text(_child(item, "title", itunes=True)) or "Episode",
-            "date": parse_date(_text(_child(item, "pubDate"))),
-            "duration": parse_duration(_text(_child(item, "duration", itunes=True))),
-            "url": address,
-            "type": (enclosure.get("type") or "").strip().lower(),
-            "size": _int(enclosure.get("length")),
-        })
-    episodes.sort(key=lambda e: -e["date"])
-    return {"url": url, "title": _text(_child(channel, "title")) or url, "author": author, "image": art,
-            "episodes": episodes[:KEEP]}
+class SimDirectory:
+    """For the simulator: shows and episodes from a file, its episodes files beside it."""
+
+    def __init__(self, path):
+        self.data = load_json(path, {"shows": [], "top": [], "episodes": {}})
+
+    def search(self, term, store):
+        return [s for s in self.data["shows"] if term.casefold() in s["title"].casefold()]
+
+    def top(self, store, limit=100):
+        return [s for i in self.data["top"] for s in self.data["shows"] if s["id"] == i]
+
+    def episodes(self, sid, store):
+        show = next((s for s in self.data["shows"] if s["id"] == sid), None)
+        if not show:
+            raise NotListed(sid)
+        return show, self.data["episodes"].get(sid, [])
 
 
 # subscriptions ---------------------------------------------------------------
 
+def _tag(el):
+    return el.tag.rpartition("}")[2] if isinstance(el.tag, str) else ""
+
+
 def read_opml(path):
-    """The shows an OPML file lists, as any podcast app writes one."""
+    """The shows an OPML file lists: isoPod's own, which knows them by Apple's id, or one
+    another podcast app wrote, which knows them by their feeds."""
     try:
         root = ET.parse(path).getroot()
     except (OSError, ET.ParseError):
         return []
     shows, seen = [], set()
     for el in root.iter():
-        attrs = {k.lower(): v for k, v in el.attrib.items()}
-        url = (attrs.get("xmlurl") or "").strip()
-        if _split(el.tag)[1] != "outline" or not url or url in seen:
+        attrs = {k.lower(): v.strip() for k, v in el.attrib.items()}
+        url, apple = attrs.get("xmlurl", ""), attrs.get("appleid", "")
+        sid = apple or ("feed-" + hashlib.sha1(url.encode()).hexdigest()[:12] if url else "")
+        if _tag(el) != "outline" or not sid or sid in seen:
             continue
-        seen.add(url)
-        shows.append({"id": show_id(url), "url": url, "title": (attrs.get("title") or attrs.get("text") or "").strip(),
-                      "image": (attrs.get("imageurl") or "").strip()})
+        seen.add(sid)
+        shows.append({"id": sid, "url": url, "title": attrs.get("title") or attrs.get("text") or "",
+                      "image": attrs.get("imageurl", "")})
     return shows
 
 
@@ -186,6 +196,8 @@ def write_opml(path, shows):
              "  <body>"]
     for s in shows:
         attrs = f'type="rss" text={quoteattr(s["title"])} title={quoteattr(s["title"])} xmlUrl={quoteattr(s["url"])}'
+        if not s["id"].startswith("feed-"):
+            attrs += f" appleId={quoteattr(s['id'])}"
         if s.get("image"):
             attrs += f" imageUrl={quoteattr(s['image'])}"
         lines.append(f"    <outline {attrs}/>")
@@ -196,52 +208,17 @@ def write_opml(path, shows):
     os.replace(path + ".tmp", path)
 
 
-# Apple's directory -----------------------------------------------------------
-
-def _apple(get, path, **params):
-    url = APPLE + path + ("?" + urllib.parse.urlencode(params) if params else "")
-    try:
-        return json.loads(get(url, limit=4 << 20))
-    except ValueError:
-        raise PodcastError("not JSON") from None
-
-
-def _show_from_apple(raw):
-    url = (raw.get("feedUrl") or "").strip()
-    if not url:
-        return None
-    return {"id": show_id(url), "url": url, "title": (raw.get("collectionName") or "").strip() or url,
-            "author": (raw.get("artistName") or "").strip(),
-            "image": raw.get("artworkUrl600") or raw.get("artworkUrl100") or ""}
-
-
-def apple_search(term, store, get=fetch):
-    raw = _apple(get, "/search", term=term, media="podcast", entity="podcast", limit=50, country=store)
-    return [s for s in map(_show_from_apple, raw.get("results", [])) if s]
-
-
-def apple_top(store, limit=100, get=fetch):
-    """The store's chart, which names its shows; their feeds are looked up after."""
-    entries = _apple(get, f"/{store}/rss/toppodcasts/limit={limit}/json").get("feed", {}).get("entry", [])
-    if isinstance(entries, dict):
-        entries = [entries]
-    ids = [i for i in (e.get("id", {}).get("attributes", {}).get("im:id") for e in entries) if i]
-    if not ids:
-        return []
-    found = _apple(get, "/lookup", id=",".join(ids), entity="podcast", country=store)
-    by_id = {str(r.get("collectionId")): r for r in found.get("results", [])}
-    return [s for s in (_show_from_apple(by_id[i]) for i in ids if i in by_id) if s]
-
-
 def _name(text, limit=80):
     """A name a file can have on any card."""
     text = re.sub(r'[\\/:*?"<>|\x00-\x1f]', " ", text or "")
     return " ".join(text.split()).strip(" .")[:limit].strip() or "Episode"
 
 
-def _ext(episode):
-    ext = os.path.splitext(urllib.parse.urlsplit(episode["url"]).path)[1].lower()
-    return ext if ext in EXTS else TYPES.get(episode.get("type", ""), ".mp3")
+def _int(text):
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        return 0
 
 
 class Episode(Spoken):
@@ -252,29 +229,36 @@ class Episode(Spoken):
         self.podcasts = podcasts
         self.show = show
         self.episode = episode
+        self.length = episode["duration"]
+
+    async def ready(self):
+        """From the web, the file itself is what MPD is given, past the counters' redirects."""
+        if self.uris[0].startswith(WEB):
+            self.uris = [await asyncio.to_thread(final_address, self.uris[0])]
+            self.podcasts.playing_from(self.uris[0])
 
     def heard(self, index, elapsed, duration, force=False):
         self.podcasts.heard(self.episode["id"], elapsed, duration or self.episode["duration"], force)
 
 
 class Podcasts:
-    """Shows from their own feeds, found through Apple's directory. What is subscribed to is
-    an OPML file in the podcasts folder, beside the episodes that were downloaded, so both
-    come and go over the cable. A show's episodes are kept on the card once they are had,
-    and asked for again behind what is shown when they are an hour old. Nothing is
-    downloaded unless it is asked for."""
+    """Shows from Apple's directory, and their newest episodes as Apple has them. What is
+    subscribed to is an OPML file in the podcasts folder, beside the episodes that were
+    downloaded, so both come and go over the cable. A show's episodes are kept on the card
+    once they are had, and asked for again behind what is shown when they are an hour old.
+    Nothing is downloaded unless it is asked for."""
 
-    def __init__(self, folder, config_dir, cache_dir, lang=lambda: "ko", fetch=fetch, download=download,
+    def __init__(self, folder, config_dir, cache_dir, lang=lambda: "ko", directory=None, download=download,
                  shrink=shrink):
         self.folder = folder
         self.opml = os.path.join(folder, SUBSCRIPTIONS)
         self.state_path = os.path.join(config_dir, "podcasts.json")
-        self.feed_dir = os.path.join(cache_dir, "podcasts", "feeds")
+        self.show_dir = os.path.join(cache_dir, "podcasts", "shows")
         self.art_dir = os.path.join(cache_dir, "podcasts", "art")
         self.lang = lang
         self.changed = lambda: None
         self.failed = lambda episode: None
-        self._fetch = fetch
+        self.directory = directory or Apple()
         self._download = download
         self._shrink = shrink
         data = load_json(self.state_path, {})
@@ -283,14 +267,17 @@ class Podcasts:
         self.downloads = data.get("downloads", {})
         self.last = data.get("last")
         self._saved_at = 0.0
-        self._subs, self._subs_mtime = [], None
-        self._feeds = {}
+        self._subs, self._subs_mtime, self._sub_ids = [], None, set()
+        self._shows = {}
         self._known = {}
         self._loading = {}
         self._tried = {}
         self._found = {}
         self._top = None
         self._art_fetching = set()
+        # Covers come many at once, from a list of a hundred: they wait for each other, not
+        # for the episodes, searches and downloads in the common pool.
+        self._covers = concurrent.futures.ThreadPoolExecutor(4, thread_name_prefix="cover")
         self._renewing = asyncio.Semaphore(2)
         self.progress = {}
         self._queue = []
@@ -298,8 +285,13 @@ class Podcasts:
         self._current = None
         self._worker = None
 
+    def _store(self):
+        return STORES.get(self.lang(), "us")
+
     def _save(self):
         self._saved_at = time.monotonic()
+        for eid in list(self.played)[:max(0, len(self.played) - HEARD_KEPT)]:
+            del self.played[eid]
         save_json(self.state_path, {"episodes": self.played, "added": self.added, "downloads": self.downloads,
                                     "last": self.last})
 
@@ -313,6 +305,7 @@ class Podcasts:
             mtime = None
         if mtime != self._subs_mtime:
             self._subs, self._subs_mtime = read_opml(self.opml), mtime
+            self._sub_ids = {s["id"] for s in self._subs}
             fresh = [s for s in self._subs if s["id"] not in self.added]
             for s in fresh:
                 self.added[s["id"]] = int(time.time())
@@ -323,14 +316,16 @@ class Podcasts:
         return self._subs
 
     def is_subscribed(self, sid):
-        return any(s["id"] == sid for s in self.subscriptions())
+        self.subscriptions()
+        return sid in self._sub_ids
 
     def subscribe(self, show, on):
         shows = [s for s in self.subscriptions() if s["id"] != show["id"]]
         if on:
-            feed = self._feeds.get(show["id"]) or {}
-            shows.insert(0, {"id": show["id"], "url": show["url"], "title": show.get("title") or feed.get("title", ""),
-                             "image": show.get("image") or feed.get("image", "")})
+            kept = (self._cached(show["id"]) or {}).get("show", {})
+            shows.insert(0, {"id": show["id"], "url": show.get("url") or kept.get("url", ""),
+                             "title": show.get("title") or kept.get("title", ""),
+                             "image": show.get("image") or kept.get("image", "")})
             self.added[show["id"]] = int(time.time())
             self._save()
         write_opml(self.opml, shows)
@@ -340,9 +335,9 @@ class Podcasts:
         """A show met in a list or a search, a subscribed one, or one whose episodes are kept."""
         self.subscriptions()
         if sid not in self._known:
-            feed = self._cached(sid)
-            if feed:
-                self._known[sid] = {"id": sid, "url": feed["url"], "title": feed["title"], "image": feed["image"]}
+            kept = self._cached(sid)
+            if kept:
+                self._known[sid] = kept["show"]
         return self._known.get(sid)
 
     def _meet(self, shows):
@@ -354,16 +349,19 @@ class Podcasts:
         """A show known from an episode of it, so its page can be opened."""
         self._known.setdefault(show["id"], show)
 
+    def _about(self, show, field):
+        return (self._cached(show["id"]) or {}).get("show", {}).get(field) or show.get(field) or ""
+
     def title(self, show):
-        return (self._cached(show["id"]) or {}).get("title") or show.get("title") or ""
+        return self._about(show, "title")
 
     def author(self, show):
-        return show.get("author") or (self._cached(show["id"]) or {}).get("author", "")
+        return self._about(show, "author")
 
     async def search(self, term):
         key = " ".join(term.casefold().split())
         if key not in self._found:
-            found = await asyncio.to_thread(apple_search, term, STORES.get(self.lang(), "us"), get=self._fetch)
+            found = await asyncio.to_thread(self.directory.search, term, self._store())
             if len(self._found) >= 20:
                 del self._found[next(iter(self._found))]
             self._found[key] = found
@@ -372,8 +370,8 @@ class Podcasts:
     async def top(self):
         """The chart of the store for isoPod's language, kept a day and fetched again behind
         what is shown once it is older."""
-        store = STORES.get(self.lang(), "us")
-        path = os.path.join(self.feed_dir, f"top-{store}.json")
+        store = self._store()
+        path = os.path.join(self.show_dir, f"top-{store}.json")
         if self._top is None or self._top[0] != store:
             self._top = (store, load_json(path, None))
         shows = self._top[1]
@@ -384,7 +382,7 @@ class Podcasts:
         return self._meet(shows)
 
     async def _chart(self, store, path):
-        shows = await asyncio.to_thread(apple_top, store, get=self._fetch)
+        shows = await asyncio.to_thread(self.directory.top, store)
         save_json(path, shows)
         self._top = (store, shows)
         return shows
@@ -399,23 +397,40 @@ class Podcasts:
 
     # episodes ----------------------------------------------------------------
 
-    def _feed_file(self, sid):
-        return os.path.join(self.feed_dir, sid + ".json")
+    def _show_file(self, sid):
+        return os.path.join(self.show_dir, sid + ".json")
 
     def _cached(self, sid):
-        if sid not in self._feeds:
-            self._feeds[sid] = load_json(self._feed_file(sid), None)
-        return self._feeds[sid]
+        if sid not in self._shows:
+            self._shows[sid] = load_json(self._show_file(sid), None)
+        return self._shows[sid]
 
     async def _keep(self, show):
-        data = await asyncio.to_thread(self._fetch, show["url"])
-        feed = await asyncio.to_thread(parse_feed, data, show["url"])
-        save_json(self._feed_file(show["id"]), feed)
-        self._feeds[show["id"]] = feed
-        return feed
+        sid = show["id"]
+        if sid.startswith("feed-"):
+            sid = await self._find(show)
+        about, episodes = await asyncio.to_thread(self.directory.episodes, sid, self._store())
+        kept = {"show": about, "episodes": episodes}
+        for key in {sid, show["id"]}:
+            save_json(self._show_file(key), kept)
+            self._shows[key] = kept
+        return kept
+
+    async def _find(self, show):
+        """A show from another app's OPML, which names its feed only: found in Apple's
+        directory by its name and that feed, and named by Apple's id in the file after."""
+        found = await asyncio.to_thread(self.directory.search, show["title"], self._store())
+        same = [s for s in found if s["url"] == show["url"]] or [s for s in found if s["title"] == show["title"]]
+        if not same:
+            raise NotListed(show["url"])
+        apple = same[0]
+        shows = [dict(s, id=apple["id"]) if s["id"] == show["id"] else s for s in self.subscriptions()]
+        self.added[apple["id"]] = self.added.get(show["id"], int(time.time()))
+        write_opml(self.opml, shows)
+        return apple["id"]
 
     def _fetched(self, show):
-        """One fetch of a feed serves all who wait for it."""
+        """One fetch of a show's episodes serves all who wait for it."""
         sid = show["id"]
         if sid not in self._loading:
             self._loading[sid] = asyncio.ensure_future(self._keep(show))
@@ -429,28 +444,28 @@ class Podcasts:
         self._tried[key] = now
         return True
 
-    async def feed(self, show):
+    async def load(self, show):
         """A show's episodes: kept ones at once, fetched again behind them once they have aged."""
-        feed = self._cached(show["id"])
-        if feed is None:
-            return await self._fetched(show)
-        if _age(self._feed_file(show["id"])) > FEED_LIFE and self._due(show["id"]):
+        kept = self._cached(show["id"])
+        if kept is None:
+            kept = await self._fetched(show)
+        elif _age(self._show_file(show["id"])) > LIFE and self._due(show["id"]):
             spawn(self._renew(show))
-        return feed
+        return kept["episodes"]
 
     async def _renew(self, show):
         async with self._renewing:
             try:
                 await self._fetched(show)
             except PodcastError as e:
-                log.info("%s kept as it was: %s", show["url"], e)
+                log.info("%s kept as it was: %s", show["id"], e)
                 return
         self.changed()
 
     def renew_subscriptions(self):
         """Opening the list of shows asks each one that has aged for what is new in it."""
         for show in self.subscriptions():
-            if _age(self._feed_file(show["id"])) > FEED_LIFE and self._due(show["id"]):
+            if _age(self._show_file(show["id"])) > LIFE and self._due(show["id"]):
                 spawn(self._renew(show))
 
     def episodes(self, show):
@@ -463,8 +478,8 @@ class Podcasts:
     def is_new(self, show, episode):
         """Not heard nor begun, and out since a little before the show was subscribed to."""
         added = self.added.get(show["id"])
-        return (added is not None and episode["id"] not in self.played and episode["date"] >= added - NEW
-                and self.is_subscribed(show["id"]))
+        return (show["id"] in self._sub_ids and added is not None and episode["id"] not in self.played
+                and episode["date"] >= added - NEW)
 
     def has_new(self, show):
         return any(self.is_new(show, e) for e in self.episodes(show)[:20])
@@ -475,10 +490,9 @@ class Podcasts:
         return mark.get("pos", 0), bool(mark.get("done"))
 
     def set_heard(self, eid, done):
+        self.played.pop(eid, None)
         if done:
             self.played[eid] = {"pos": 0, "done": True}
-        else:
-            self.played.pop(eid, None)
         self._save()
 
     def heard(self, eid, elapsed, duration, force=False):
@@ -489,6 +503,7 @@ class Podcasts:
         else:
             return
         if self.played.get(eid) != mark:
+            self.played.pop(eid, None)  # the latest heard is the last to go
             self.played[eid] = mark
             if force or mark["done"] or time.monotonic() - self._saved_at > SAVE_EVERY:
                 self._save()
@@ -504,6 +519,12 @@ class Podcasts:
         self._save()
         self.meet(self.last["show"])
         return Episode(self, self.last["show"], episode, uri), (0 if done else max(0, pos - 2))
+
+    def playing_from(self, uri):
+        """The address MPD was given for the last episode, to know it by after a restart."""
+        if self.last:
+            self.last["uri"] = uri
+            self._save()
 
     def identify(self, uri):
         """An episode MPD is found playing after a restart: a downloaded one, or the last one."""
@@ -560,15 +581,21 @@ class Podcasts:
         self.changed()
 
     async def _work(self):
-        """One download at a time, in the order asked for, the page told how far each is."""
+        """One download at a time, in the order asked for; the page is told as each whole
+        percent comes, not every second, for it is drawn again each time."""
         try:
             while self._queue:
                 show, episode = self._queue.pop(0)
                 eid = self._current = episode["id"]
                 job = asyncio.ensure_future(asyncio.to_thread(self._save_episode, show, episode))
+                shown = None
                 while not job.done():
                     await asyncio.wait([job], timeout=1)
-                    self.changed()
+                    share = self.progress.get(eid)
+                    percent = int(share * 100) if share is not None else None
+                    if percent != shown:
+                        shown = percent
+                        self.changed()
                 self._current = None
                 self.progress.pop(eid, None)
                 try:
@@ -588,18 +615,19 @@ class Podcasts:
     def _save_episode(self, show, episode):
         eid = episode["id"]
         when = datetime.date.fromtimestamp(episode["date"]).isoformat() + " " if episode["date"] else ""
-        rel = os.path.join(_name(self.title(show) or show.get("title")), _name(when + episode["title"]) + _ext(episode))
+        title = self.title(show) or show.get("title")
+        rel = os.path.join(_name(title), _name(when + episode["title"]) + episode.get("ext", ".mp3"))
         path = os.path.join(self.folder, rel)
         if os.path.exists(path):
             base, ext = os.path.splitext(rel)
             rel = f"{base} {eid[:6]}{ext}"
             path = os.path.join(self.folder, rel)
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        request = urllib.request.Request(episode["url"], headers={"User-Agent": USER_AGENT})
+        request = urllib.request.Request(web(episode["url"]), headers={"User-Agent": USER_AGENT})
         part = path + ".part"
         try:
             with urllib.request.urlopen(request, timeout=TIMEOUT) as response, open(part, "wb") as out:
-                total = _int(response.headers.get("Content-Length")) or episode.get("size") or 0
+                total = _int(response.headers.get("Content-Length"))
                 got = 0
                 while chunk := response.read(CHUNK):
                     if eid in self._cancelled:
@@ -623,7 +651,7 @@ class Podcasts:
     # artwork -----------------------------------------------------------------
 
     def _art_url(self, show):
-        return show.get("image") or (self._cached(show["id"]) or {}).get("image", "")
+        return show.get("image") or self._about(show, "image")
 
     def _art_base(self, show):
         url = self._art_url(show)
@@ -644,7 +672,8 @@ class Podcasts:
 
     async def _fetch_art(self, show, base, arrived):
         try:
-            had = await asyncio.to_thread(self._save_art, self._art_url(show), base)
+            had = await asyncio.get_running_loop().run_in_executor(
+                self._covers, self._save_art, self._art_url(show), base)
         finally:
             self._art_fetching.discard(base)
         if had:

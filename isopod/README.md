@@ -28,14 +28,16 @@ replaces the front end with a small shell built around your music.
   it is opened and kept on the card with its logos. Opened a week or more later it shows at
   once as it was, and is fetched again behind that when the network is there. X on a
   station makes it a favorite.
-- **Podcasts** from their own feeds, found by name or among the most listened to in Apple's
-  directory, under Subscriptions, Downloads, Popular and Search. A show's episodes are kept
-  on the card once fetched and asked for again behind them when they are an hour old; one
-  that came out lately and has not been heard has a blue dot before it, as on the iPod. An
-  episode plays from the web, or from the card once X has downloaded it, and nothing is
-  downloaded unless it is asked for. Each episode keeps its place. What is subscribed to is
-  `Subscriptions.opml` in the podcasts folder, beside the downloads: the file podcast apps
-  export and import.
+- **Podcasts** from Apple's directory, the one place asked: found by name or among the most
+  listened to, under Subscriptions, Downloads, Popular and Search. A show's newest 200
+  episodes come as Apple has them from its feed, in a few hundred kilobytes, and are kept on
+  the card and asked for again behind them when they are an hour old; one that came out
+  lately and has not been heard has a blue dot before it, as on the iPod. An episode plays
+  from the web, its address followed past the listener counters' redirects first, or from the
+  card once X has downloaded it; nothing is downloaded unless it is asked for, and one that
+  will not play from the web says so and can be downloaded instead. Each episode keeps its
+  place. What is subscribed to is `Subscriptions.opml` in the podcasts folder, beside the
+  downloads, and one exported by another podcast app is matched to Apple's shows by feed.
 - **Audiobooks**, in the Books menu beside eBooks, from `/storage/audiobooks`: a folder of
   files, one for each chapter or part (or `CD 1`, `CD 2` folders of them), or one file. An
   M4B's own chapters are read from it, and a folder of M4Bs is a shelf of books, an

@@ -14,7 +14,7 @@ from .ipc import Server
 from .mpd import MPD
 from .music import Music
 from .pages import Pages
-from .podcasts import Podcasts
+from .podcasts import Podcasts, SimDirectory
 from .power import Power
 from .radio import Radio
 from .settings import Settings
@@ -47,10 +47,14 @@ class App:
                                                             "/audiobooks/*")
         self.music.favorites_changed = lambda: self.page_changed("/music/*")
         self.music.stream_failed = lambda: self.toast(self.pages.unreachable(), "wifi")
+        self.music.cannot_play = lambda: self.toast(self.t("cannot_play"), "music")
         self.radio = Radio(args.config, args.cache)
         self.radio.changed = lambda: self.page_changed("/radio/*")
         self.music.station_favorite = lambda station: self.radio.is_favorite(station.get("uuid"))
-        self.podcasts = Podcasts(self.paths["podcasts"], args.config, args.cache, lang=lambda: self.t.lang)
+        # The simulator's shows are files that stand in for Apple's directory.
+        sim_shows = os.environ.get("ISOPOD_SIM_DIRECTORY") if self.sim else None
+        self.podcasts = Podcasts(self.paths["podcasts"], args.config, args.cache, lang=lambda: self.t.lang,
+                                 directory=SimDirectory(sim_shows) if sim_shows else None)
         self.podcasts.changed = lambda: self.page_changed("/podcasts/*")
         self.podcasts.failed = lambda episode: self.toast(self.t("download_failed"), "wifi")
         self.audiobooks = Audiobooks(self.paths["audiobooks"], args.config, args.cache, mpd=self.music.mpd)

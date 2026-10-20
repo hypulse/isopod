@@ -66,6 +66,8 @@ STRINGS = {
     "cancel_download": ("다운로드 취소", "Cancel Download"),
     "remove_download": ("다운로드 삭제", "Remove Download"),
     "download_failed": ("다운로드할 수 없음", "Couldn’t Download"),
+    "cannot_play": ("재생할 수 없음", "Can’t Play"),
+    "not_listed": ("Apple 목록에 없음", "Not on Apple Podcasts"),
     "mark_played": ("들은 것으로 표시", "Mark as Played"),
     "mark_unplayed": ("안 들은 것으로 표시", "Mark as Unplayed"),
     "go_to_show": ("프로그램으로 이동", "Go to Show"),

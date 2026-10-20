@@ -74,6 +74,11 @@ class Spoken:
         plain = [local(u) for u in self.uris]
         return plain.index(local(uri)) if local(uri) in plain else None
 
+    length = 0.0
+
+    async def ready(self):
+        """Made ready to be given to MPD, which may change its addresses."""
+
     def album(self, index, elapsed):
         """The line under the artist's: the chapter, where there are chapters."""
         return ""
@@ -118,6 +123,7 @@ class Music:
         self.song_changed = lambda: None
         self.favorites_changed = lambda: None
         self.stream_failed = lambda: None
+        self.cannot_play = lambda: None
         self.station_favorite = lambda station: False
         self.step_station = None
         self.station = None
@@ -543,12 +549,24 @@ class Music:
         self.stream_failed()
         await self.refresh()
 
-    async def play_spoken(self, spoken, index=0, start=0.0):
-        """An episode or a book, from where it was left. Repeat and shuffle are a song's."""
+    def show_spoken(self, spoken, index=0, start=0.0):
+        """Now Playing shows an episode or a book at once, while it is made ready."""
         self.station = None
         self.spoken = spoken
+        if spoken.uris[index] != self.state.get("player").get("file"):
+            self.song_changed()
+        self.state.update("player", state="play", kind=spoken.kind, file=spoken.uris[index], title=spoken.title,
+                          artist=spoken.artist, album=spoken.album(index, start), art=spoken.art, favorite=False,
+                          buffering=True, elapsed=float(start), duration=float(spoken.length), pos=1, count=1)
+
+    async def play_spoken(self, spoken, index=0, start=0.0):
+        """An episode or a book, from where it was left. Repeat and shuffle are a song's."""
         if self._stream_watch:
             self._stream_watch.cancel()
+        self.show_spoken(spoken, index, start)
+        await spoken.ready()
+        if self.spoken is not spoken:
+            return  # something else was picked meanwhile
         cmds = [("clear",), ("random", "0"), ("repeat", "0"), ("single", "0")]
         cmds += [("add", uri) for uri in spoken.uris]
         if start < 1:
@@ -564,7 +582,8 @@ class Music:
             self._stream_watch = spawn(self._watch_spoken(spoken))
 
     async def _watch_spoken(self, spoken, patience=20):
-        """An episode from the web that does not start is said to be out of reach."""
+        """An episode from the web that does not start: out of reach when nothing came, and
+        not to be played when MPD could not make sound of what came (it can be downloaded)."""
         deadline = time.monotonic() + patience
         while time.monotonic() < deadline:
             await asyncio.sleep(0.5)
@@ -578,12 +597,13 @@ class Music:
                 break
             if status.get("audio") or status.get("state") != "play":
                 return
+        error = status.get("error")
         try:
             await self.mpd.call_list([("clearerror",), ("stop",)])
         except MPDError:
             pass
-        log.warning("episode did not start: %s", spoken.uris[0])
-        self.stream_failed()
+        log.warning("episode did not start: %s: %s", spoken.uris[0], error or "no sound")
+        (self.cannot_play if error else self.stream_failed)()
         await self.refresh()
 
     async def seek_to(self, seconds):

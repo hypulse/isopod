@@ -6,7 +6,7 @@ import secrets
 import zlib
 
 from .countries import NAMES as COUNTRIES, country_name
-from .podcasts import PodcastError
+from .podcasts import NotListed, PodcastError
 from .radio import DECADES, GENRES, RadioError
 from .system import human_size
 from .util import enc, fmt_duration, sort_key, spawn, split_path
@@ -737,11 +737,12 @@ class Pages:
                 return page(path, "", [])
             items = [item("subscribe", t("subscribe"), "switch", on=p.is_subscribed(show["id"]))]
             try:
-                feed = await p.feed(show)
-            except PodcastError:
-                return page(path, p.title(show), items + [header(self.unreachable())], rows="tall")
+                episodes = await p.load(show)
+            except PodcastError as e:
+                why = t("not_listed") if isinstance(e, NotListed) else self.unreachable()
+                return page(path, p.title(show), items + [header(why)], rows="tall")
             p.want_art([show], lambda found: self._art_arrived(found, path))
-            episodes = self._episode_items([(show, e) for e in feed["episodes"]])
+            episodes = self._episode_items([(show, e) for e in episodes])
             return page(path, p.title(show), items + (episodes or [header(t("no_episodes"))]), rows="tall")
         title = t("popular") if kind == "top" else t("search_for", q=rest[1]) if len(rest) > 1 else ""
         try:
@@ -764,7 +765,7 @@ class Pages:
         elif rest[:1] == ["show"] and len(rest) >= 2 and p.show(rest[1]):
             show = p.show(rest[1])
             try:
-                await p.feed(show)
+                await p.load(show)
             except PodcastError:
                 pass
             pairs = [(show, e) for e in p.episodes(show)]
@@ -789,8 +790,10 @@ class Pages:
             return {"reload": True}
         show, episode = await self._episode(rest, key)
         if episode:
+            # Now Playing opens at once; the episode's address is followed to its file behind it.
             spoken, start = p.play(show, episode)
-            await self.app.music.play_spoken(spoken, 0, start)
+            self.app.music.show_spoken(spoken, 0, start)
+            spawn(self.app.music.play_spoken(spoken, 0, start))
             return {"nowplaying": True}
 
     def _podcast_search(self, text):

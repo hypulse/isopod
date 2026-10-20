@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Create a small fictional music library (tagged MP3s with cover art) for the simulator."""
-import email.utils
 import hashlib
+import json
 import math
 import os
 import subprocess
@@ -230,34 +230,33 @@ FEEDS = [
 
 
 def podcasts(root):
-    """Two shows whose feeds and episodes are files here, the subscriptions to them, and their
-    covers made as isopodd would keep them; run.sh puts the last two in place for each walk."""
+    """Two shows, subscribed to, whose episodes are files here, with a file that stands in for
+    Apple's directory and their covers made as isopodd would keep them; run.sh puts the
+    subscriptions and covers in place for each walk."""
     feeds = os.path.join(root, "feeds")
     art_dir = os.path.join(feeds, "art")
     os.makedirs(art_dir, exist_ok=True)
     now = int(time.time())
+    directory = {"shows": [], "top": [], "episodes": {}}
     outlines = []
-    for name, title, author, colors, motif, episodes in FEEDS:
+    for n, (name, title, author, colors, motif, episodes) in enumerate(FEEDS, 1001):
+        sid = str(n)
         art = os.path.join(feeds, name + ".jpg")
         cover(art, colors, motif, title, author)
         image = "file://" + art
         Image.open(art).resize((300, 300)).save(
             os.path.join(art_dir, hashlib.sha1(image.encode()).hexdigest()[:16] + ".png"))
-        items = []
-        for n, (episode, days, seconds) in enumerate(episodes, 1):
-            audio = os.path.join(feeds, f"{name}-{n}.mp3")
+        directory["shows"].append({"id": sid, "title": title, "author": author, "image": image, "url": ""})
+        directory["top"].append(sid)
+        directory["episodes"][sid] = []
+        for k, (episode, days, seconds) in enumerate(episodes, 1):
+            audio = os.path.join(feeds, f"{name}-{k}.mp3")
             spoken(audio, seconds, episode, author, title)
-            when = email.utils.formatdate(now - days * 86400 - 3600, usegmt=True)
-            items.append(f"<item><title>{escape(episode)}</title><guid>{name}-{n}</guid><pubDate>{when}</pubDate>"
-                         f"<itunes:duration>{seconds}</itunes:duration>"
-                         f'<enclosure url="file://{audio}" type="audio/mpeg" length="{os.path.getsize(audio)}"/></item>')
-        feed = os.path.join(feeds, name + ".xml")
-        with open(feed, "w", encoding="utf-8") as f:
-            f.write('<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0" '
-                    'xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd"><channel>'
-                    f"<title>{escape(title)}</title><itunes:author>{escape(author)}</itunes:author>"
-                    f'<itunes:image href="{image}"/>' + "".join(items) + "</channel></rss>\n")
-        outlines.append(f'<outline type="rss" text="{escape(title)}" xmlUrl="file://{feed}" imageUrl="{image}"/>')
+            directory["episodes"][sid].append({"id": f"{sid}{k:03d}", "title": episode, "date": now - days * 86400 - 3600,
+                                               "duration": seconds, "url": "file://" + audio, "ext": ".mp3"})
+        outlines.append(f'<outline type="rss" text="{escape(title)}" xmlUrl="" appleId="{sid}" imageUrl="{image}"/>')
+    with open(os.path.join(feeds, "directory.json"), "w", encoding="utf-8") as f:
+        json.dump(directory, f, ensure_ascii=False)
     with open(os.path.join(feeds, "Subscriptions.opml"), "w", encoding="utf-8") as f:
         f.write('<?xml version="1.0" encoding="utf-8"?>\n<opml version="2.0"><body>'
                 + "".join(outlines) + "</body></opml>\n")

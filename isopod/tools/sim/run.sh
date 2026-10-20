@@ -38,6 +38,8 @@ pkill -x mpd 2>/dev/null || true
 mpd "$WORK/mpd.conf"
 
 pkill -f "isopodd --sim" 2>/dev/null || true
+# Podcasts come from a file standing in for Apple's directory, when the library has one.
+[ -e "$WORK/feeds/directory.json" ] && export ISOPOD_SIM_DIRECTORY="$WORK/feeds/directory.json"
 export PATH="$ROOT/shell:$PATH"  # isopod-thumb, which isopodd runs on station logos
 python3 "$ROOT/daemon/isopodd" --sim --socket "$WORK/isopodd.sock" --config "$WORK/config" \
     --cache "$WORK/cache" --music "$WORK/music" --videos "$WORK/videos" --books "$WORK/books" --data "$WORK/share" \
