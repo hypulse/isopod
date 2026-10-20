@@ -43,6 +43,6 @@ wait 400
 shot 11-show-options.png
 key back
 key home
-hold down 6
+hold down 7
 wait 600
 shot 12-home-now-playing.png

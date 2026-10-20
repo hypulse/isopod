@@ -526,15 +526,22 @@ static const char *bar_title(Page *p)
 
 typedef struct {
     const char *name;
-    Rgba top, bottom;
+    Rgba top, bottom, ink;
 } Tone;
 
+/* Each section's colour, as an iPhone's icons have them, lighter at the top, and the ink of
+ * its glyph on the white disc. */
 static const Tone TONES[] = {
-    {"music", RGB(255, 94, 108), RGB(214, 36, 82)},      {"video", RGB(72, 170, 255), RGB(28, 98, 226)},
-    {"radio", RGB(186, 104, 255), RGB(112, 64, 232)},    {"book", RGB(255, 176, 64), RGB(240, 112, 36)},
-    {"settings", RGB(156, 162, 176), RGB(96, 102, 116)}, {"playlist", RGB(255, 122, 172), RGB(226, 60, 124)},
-    {"genre", RGB(90, 206, 226), RGB(34, 140, 184)},     {"search", RGB(126, 136, 158), RGB(70, 80, 104)},
-    {"podcast", RGB(88, 210, 132), RGB(24, 150, 92)},   {"audiobook", RGB(255, 176, 64), RGB(240, 112, 36)},
+    {"music", RGB(252, 92, 110), RGB(247, 38, 70), RGB(236, 32, 64)},
+    {"radio", RGB(86, 214, 112), RGB(38, 168, 80), RGB(30, 150, 66)},
+    {"podcast", RGB(206, 112, 248), RGB(138, 56, 214), RGB(136, 54, 210)},
+    {"video", RGB(86, 178, 255), RGB(18, 112, 242), RGB(12, 108, 236)},
+    {"book", RGB(255, 178, 64), RGB(255, 122, 6), RGB(242, 112, 0)},
+    {"audiobook", RGB(255, 210, 92), RGB(246, 160, 28), RGB(220, 128, 0)},
+    {"settings", RGB(176, 180, 190), RGB(118, 122, 134), RGB(100, 104, 116)},
+    {"playlist", RGB(255, 132, 182), RGB(238, 62, 130), RGB(226, 46, 116)},
+    {"genre", RGB(96, 212, 240), RGB(20, 150, 212), RGB(10, 132, 196)},
+    {"search", RGB(132, 144, 184), RGB(78, 90, 132), RGB(70, 82, 124)},
 };
 
 #define KB_MS 7000
@@ -594,13 +601,23 @@ static void draw_panel(Page *p, const char *kind, int px, int py, int pw, int ph
             tone = &TONES[i];
     fill_gradient(px, py, pw, ph, RGBA(tone->top.r, tone->top.g, tone->top.b, alpha),
                   RGBA(tone->bottom.r, tone->bottom.g, tone->bottom.b, alpha));
+    /* The glyph in a white disc a little above the middle, where the eye puts the middle,
+     * over a soft shadow in a deep shade of the section's colour. */
+    int cx = px + pw / 2, cy = py + ph * 46 / 100, w, h;
+    SDL_Texture *disc = icon("gizmo");
+    if (disc) {
+        SDL_QueryTexture(disc, NULL, NULL, &w, &h);
+        Rgba b = tone->bottom;
+        draw_icon("gizmo-shadow", cx - w / 2, cy - h / 2,
+                  RGBA(b.r * 45 / 100, b.g * 45 / 100, b.b * 45 / 100, scale_a(150, alpha)));
+        draw_icon("gizmo", cx - w / 2, cy - h / 2, RGBA(255, 255, 255, alpha));
+    }
     char name[48];
     snprintf(name, sizeof(name), "glyph-%s", tone->name);
     SDL_Texture *g = icon(name);
     if (g) {
-        int w, h;
         SDL_QueryTexture(g, NULL, NULL, &w, &h);
-        draw_icon(name, px + (pw - w) / 2, py + (ph - h) / 2 - 8, RGBA(255, 255, 255, scale_a(238, alpha)));
+        draw_icon(name, cx - w / 2, cy - h / 2, RGBA(tone->ink.r, tone->ink.g, tone->ink.b, alpha));
     }
 }
 

@@ -41,7 +41,7 @@ shot 08-letter.png
 wait 900
 key home
 open /music
-hold down 8
+hold down 7
 key confirm
 wait 500
 shot 09-keyboard.png

@@ -24,6 +24,7 @@ key down
 key down
 key down
 key down
+key down
 key confirm
 wait 600
 shot 09-shuffle-with-no-songs.png

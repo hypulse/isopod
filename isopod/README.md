@@ -23,11 +23,11 @@ replaces the front end with a small shell built around your music.
   playlist's own folder or from the music folder. A playlist exported on a computer, with
   that computer's paths, finds the songs that sit in the same folders under the same names
   here.
-- **Radio**, in the Music menu: stations from [Radio Browser](https://www.radio-browser.info),
-  under Favorites, Popular, Genres, Countries and Search. A list is fetched the first time
-  it is opened and kept on the card with its logos. Opened a week or more later it shows at
-  once as it was, and is fetched again behind that when the network is there. X on a
-  station makes it a favorite.
+- **Radio**: stations from [Radio Browser](https://www.radio-browser.info), under Favorites,
+  Popular, Genres, Countries and Search. A list is fetched the first time it is opened and
+  kept on the card with its logos. Opened a week or more later it shows at once as it was,
+  and is fetched again behind that when the network is there. X on a station makes it a
+  favorite.
 - **Podcasts** from Apple's directory, the one place asked: found by name or among the most
   listened to, under Subscriptions, Downloads, Popular and Search. A show's newest 200
   episodes come as Apple has them from its feed, in a few hundred kilobytes, and are kept on
@@ -82,8 +82,9 @@ replaces the front end with a small shell built around your music.
 ## The look
 
 The last iPod classic, brought forward. Menus split in two: the list on the left, and on
-the right a panel where album art drifts slowly across, or the song playing, or a colour and
-a glyph for the section you are on. Cover Flow turns the albums in 3D over a black floor
+the right a panel where album art drifts slowly across, or the song playing, or the section
+you are on: its colour, as an iPhone's icons have theirs, and a white disc with the
+section's glyph in that colour, floating a little above the middle. Cover Flow turns the albums in 3D over a black floor
 with their reflections, each side turned to face the middle; press A and the album flips
 over to show its songs. Artwork stays square, as the covers are, and type is set in
 Pretendard; names it cannot write, Japanese and Chinese among them, are set in Noto Sans CJK.

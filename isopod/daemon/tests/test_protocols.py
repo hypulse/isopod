@@ -2581,13 +2581,13 @@ class SpokenPagesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([i["title"] for i in page["items"]], ["Subscribe", "Couldn’t Connect"])
         self.assertEqual((await self.pages.build("/podcasts/top"))["empty"]["title"], "Couldn’t Connect")
 
-    async def test_audiobooks_under_books_and_the_radio_under_music(self):
-        self.assertEqual(await self.rows("/", "title"), ["Music", "Podcasts", "Videos", "Books", "Settings",
+    async def test_audiobooks_under_books_and_the_radio_on_the_home_screen(self):
+        self.assertEqual(await self.rows("/", "title"), ["Music", "Radio", "Podcasts", "Videos", "Books", "Settings",
                                                          "Shuffle Songs"])
         self.assertEqual(await self.rows("/books", "title"), ["eBooks", "Audiobooks"])
         self.assertEqual(await self.pages.activate("/books", "audiobooks"), {"push": "/audiobooks"})
-        self.assertIn("Radio", await self.rows("/music", "title"))
-        self.assertEqual(await self.pages.activate("/music", "radio"), {"push": "/radio"})
+        self.assertNotIn("Radio", await self.rows("/music", "title"))
+        self.assertEqual(await self.pages.activate("/", "radio"), {"push": "/radio"})
         self.assertEqual(await self.rows("/audiobooks", "key", "title"), [("b:Book", "Book")])
         self.assertEqual(await self.pages.activate("/audiobooks", "b:Book"), {"nowplaying": True})
         self.assertEqual(self.mpd.queue, ["file://" + os.path.join(self.app.audiobooks.folder, "Book", n)

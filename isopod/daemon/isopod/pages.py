@@ -149,6 +149,7 @@ class Pages:
         t = self.t
         items = [
             item("music", t("music"), preview="art"),
+            item("radio", t("radio"), preview="radio"),
             item("podcasts", t("podcasts"), preview="podcast"),
             item("videos", t("videos"), preview="video"),
             item("books", t("books"), preview="book"),
@@ -244,7 +245,6 @@ class Pages:
                      item("albums", t("albums"), preview="art"),
                      item("songs", t("songs"), preview="art"),
                      item("genres", t("genres"), preview="genre"),
-                     item("radio", t("radio"), preview="radio"),
                      item("queue", t("up_next"), preview="now"),
                      item("search", t("search"), preview="search")]
             return page(path, t("music"), items, layout="split", art=self._art_pool(path))
@@ -328,7 +328,7 @@ class Pages:
             if key == "search":
                 return {"input": {"title": self.t("search"), "placeholder": self.t("search_music_prompt"),
                                   "token": self._token(self._music_search)}}
-            return {"push": "/radio" if key == "radio" else f"/music/{key}"}
+            return {"push": f"/music/{key}"}
         kind = rest[0]
         if kind == "coverflow":
             (artist, album), _ = m.coverflow_albums()[int(key[3:])]

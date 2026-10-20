@@ -4,6 +4,7 @@ wait 1500
 key down
 key down
 key down
+key down
 key confirm
 key down
 shot 01-books-menu.png

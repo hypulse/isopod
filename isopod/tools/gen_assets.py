@@ -5,7 +5,7 @@ import math
 import os
 import sys
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 SS = 4
 BOLD_FONT = os.environ.get("ISOPOD_BOLD_FONT", "/usr/share/fonts/pretendard/Pretendard-Bold.otf")
@@ -150,56 +150,185 @@ def empty_icons(P):
 
 
 
+# The artwork panel beside split menus: a white disc on the section's colour, with the
+# section's glyph in it. Glyphs are drawn on an 88 grid around 44,44 and saved at 100, so
+# that each fills about half the 152-wide disc; their strokes share one weight and each is
+# sized by eye against the others, the open ones a little larger than the solid ones.
+
+DISC = 152
+GLYPH = 100
+STROKE = 7.5
+
+
+def _px(v):
+    return v * SS
+
+
+def _g_line(d, pts, width):
+    d.line([(_px(x), _px(y)) for x, y in pts], fill=255, width=int(_px(width)), joint="curve")
+    for x, y in (pts[0], pts[-1]):
+        r = _px(width) / 2
+        d.ellipse([_px(x) - r, _px(y) - r, _px(x) + r, _px(y) + r], fill=255)
+
+
+def _g_arc(d, cx, cy, r, start, end, width, caps=True):
+    d.arc([_px(cx - r), _px(cy - r), _px(cx + r), _px(cy + r)], start, end, fill=255, width=int(_px(width)))
+    if caps:
+        for a in (start, end):
+            x = cx + (r - width / 2) * math.cos(math.radians(a))
+            y = cy + (r - width / 2) * math.sin(math.radians(a))
+            d.ellipse([_px(x - width / 2), _px(y - width / 2), _px(x + width / 2), _px(y + width / 2)], fill=255)
+
+
+def _g_poly(d, pts, fill=255):
+    d.polygon([(_px(x), _px(y)) for x, y in pts], fill=fill)
+
+
+def _g_circle(d, cx, cy, r, fill=255):
+    d.ellipse([_px(cx - r), _px(cy - r), _px(cx + r), _px(cy + r)], fill=fill)
+
+
+def _g_rrect(d, x0, y0, x1, y1, r):
+    d.rounded_rectangle([_px(x0), _px(y0), _px(x1), _px(y1)], radius=_px(r), fill=255)
+
+
+def _g_head(d, cx, cy, rx=11, ry=8.4, angle=-24):
+    """A note's head, an ellipse leaning back. Returns the x of its right edge, where its
+    stem stands, so that the two meet without a step."""
+    a = math.radians(angle)
+    pts = [(rx * math.cos(t), ry * math.sin(t)) for t in (2 * math.pi * i / 96 for i in range(96))]
+    _g_poly(d, [(cx + x * math.cos(a) - y * math.sin(a), cy + x * math.sin(a) + y * math.cos(a)) for x, y in pts])
+    return cx + math.hypot(rx * math.cos(a), ry * math.sin(a))
+
+
+def _g_curve(p0, p1, p2, n=24):
+    return [((1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * p1[0] + t * t * p2[0],
+             (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * p1[1] + t * t * p2[1]) for t in (i / n for i in range(n + 1))]
+
+
+def _g_pages(d, spine, edge, top, bottom, lift):
+    """An open book's two pages, their outer corners lifted."""
+    left = (_g_curve((spine, top + lift), ((spine + edge) / 2, top - lift), (edge, top))
+            + _g_curve((edge, bottom), ((spine + edge) / 2, bottom - lift), (spine, bottom + lift)))
+    _g_poly(d, left)
+    _g_poly(d, [(88 - x, y) for x, y in left])
+
+
+NOTE_STEM, NOTE_BEAM = 6.5, 10
+
+
+def _music(d):
+    """Two eighths under one beam, their stems on their heads' right edges and stopping at
+    the beam's slope."""
+    right1, right2 = _g_head(d, 27, 64), _g_head(d, 62, 57)
+    left, right, top1, top2 = right1 - NOTE_STEM, right2, 22, 14
+
+    def beam(x):
+        return top1 + (top2 - top1) * (x - left) / (right - left)
+    for edge, foot in ((right1, 64), (right2, 57)):
+        _g_poly(d, [(edge - NOTE_STEM, foot), (edge, foot), (edge, beam(edge)),
+                    (edge - NOTE_STEM, beam(edge - NOTE_STEM))])
+    _g_poly(d, [(left, top1), (right, top2), (right, top2 + NOTE_BEAM), (left, top1 + NOTE_BEAM)])
+
+
+def _radio(d):
+    _g_circle(d, 44, 44, 8.5)
+    for r in (21, 35):
+        _g_arc(d, 44, 44, r, 135, 225, STROKE + 0.5)
+        _g_arc(d, 44, 44, r, -45, 45, STROKE + 0.5)
+
+
+def _podcast(d):
+    _g_circle(d, 44, 38, 8.5)
+    _g_rrect(d, 38, 51, 50, 76, 6)
+    for r in (20, 32):
+        _g_arc(d, 44, 38, r, 145, 395, STROKE)
+
+
+def _video(d):
+    _g_rrect(d, 11, 22, 77, 66, 10)
+    _g_poly(d, [(38, 32), (38, 56), (57, 44)], fill=0)
+
+
+def _book(d):
+    _g_pages(d, 41.5, 11, 23, 64, 3.5)
+
+
+def _audiobook(d):
+    _g_arc(d, 44, 46, 30, 180, 360, STROKE, caps=False)
+    _g_rrect(d, 10, 42, 24, 70, 6)
+    _g_rrect(d, 64, 42, 78, 70, 6)
+    _g_pages(d, 42.5, 29, 48, 68, 2)
+
+
+def _settings(d):
+    teeth, outer, body = 8, 34, 25
+    for i in range(teeth):
+        a = math.radians(i * 360 / teeth)
+        c, n = math.cos(a), math.sin(a)
+        _g_poly(d, [(44 + r * c - w * n, 44 + r * n + w * c)
+                    for r, w in ((body - 2, 7), (outer, 5.5), (outer, -5.5), (body - 2, -7))])
+    _g_circle(d, 44, 44, body)
+    _g_circle(d, 44, 44, 11.5, fill=0)
+
+
+def _playlist(d):
+    """Three lines of a list and an eighth whose flag curls from the stem's top to a point."""
+    for y, end in ((25, 46), (40, 46), (55, 34)):
+        _g_line(d, [(12, y), (end, y)], 7)
+    right = _g_head(d, 58, 66, 10.5, 8)
+    _g_poly(d, [(right - NOTE_STEM, 66), (right, 66), (right, 17), (right - NOTE_STEM, 17)])
+    outer = _g_curve((right - NOTE_STEM, 17), (right + 15.5, 23), (right + 11.5, 45))
+    inner = _g_curve((right + 11.5, 45), (right + 9, 31), (right - NOTE_STEM, 31))
+    _g_poly(d, outer + inner)
+
+
+def _genre(d):
+    for x, y in ((15, 15), (47, 15), (15, 47), (47, 47)):
+        _g_rrect(d, x, y, x + 26, y + 26, 8)
+
+
+def _search(d):
+    _g_arc(d, 38, 38, 25, 0, 360, STROKE + 1, caps=False)
+    _g_line(d, [(57, 57), (74, 74)], STROKE + 3.5)
+
+
 def glyphs(P):
-    """128 pt white glyphs for the artwork panel beside split menus."""
-    def glyph(name, draw):
-        img, d = canvas(128, 128)
-        draw(d)
-        done(img, 128, 128, P("glyph-" + name))
+    """The sections' glyphs, white, which the shell tints with each section's ink."""
+    for name, draw in (("music", _music), ("radio", _radio), ("podcast", _podcast), ("video", _video),
+                       ("book", _book), ("audiobook", _audiobook), ("settings", _settings),
+                       ("playlist", _playlist), ("genre", _genre), ("search", _search)):
+        mask = Image.new("L", (88 * SS, 88 * SS), 0)
+        draw(ImageDraw.Draw(mask))
+        img = Image.new("RGBA", mask.size, W)
+        img.putalpha(mask)
+        img.resize((GLYPH, GLYPH), Image.LANCZOS).save(P("glyph-" + name))
 
-    glyph("music", lambda d: note(d, 24, 22, 2.0))
 
-    def video(d):
-        rrect(d, 18, 32, 110, 96, 14, fill=False, width=7)
-        poly(d, [(54, 48), (54, 80), (84, 64)])
-    glyph("video", video)
-
-    def book(d):
-        poly(d, [(20, 38), (60, 45), (60, 96), (20, 89)])
-        poly(d, [(68, 45), (108, 38), (108, 89), (68, 96)])
-    glyph("book", book)
-
-    glyph("radio", lambda d: on_air(d, 64, 64, 1.0, 7))
-    glyph("podcast", lambda d: microphone(d, 64, 50, 1.0, 7))
-    glyph("audiobook", lambda d: listening_book(d, 22, 20, 2.1, 3.6))
-
-    def settings(d):
-        for i in range(8):
-            a = math.radians(i * 45)
-            c, n = math.cos(a), math.sin(a)
-            pts = []
-            for r, w in ((24, 9), (46, 7), (46, -7), (24, -9)):
-                pts.append((64 + r * c - w * n, 64 + r * n + w * c))
-            poly(d, pts)
-        ellipse(d, 30, 30, 98, 98)
-        d.ellipse([s(49), s(49), s(79), s(79)], fill=CLEAR)
-    glyph("settings", settings)
-
-    def playlist(d):
-        for y in (36, 58, 80):
-            line(d, [(20, y), (66, y)], 7)
-        note(d, 70, 52, 1.0)
-    glyph("playlist", playlist)
-
-    def genre(d):
-        for x, y in ((24, 24), (70, 24), (24, 70), (70, 70)):
-            rrect(d, x, y, x + 34, y + 34, 9)
-    glyph("genre", genre)
-
-    def search(d):
-        ellipse(d, 28, 28, 84, 84, fill=False, width=9)
-        line(d, [(78, 78), (102, 102)], 12)
-    glyph("search", search)
+def gizmo(P):
+    """The disc the glyphs sit in: white, lit a little from above, with a hairline edge; and
+    its soft shadow below it, a white mask the shell tints a deep shade of the section's
+    colour. Both are the same size, to be drawn on the same spot."""
+    n = DISC + 56
+    c = n / 2
+    shadow = Image.new("L", (n, n), 0)
+    ImageDraw.Draw(shadow).ellipse([c - DISC / 2 + 4, c - DISC / 2 + 10, c + DISC / 2 - 4, c + DISC / 2 + 10],
+                                   fill=255)
+    shade = Image.new("RGBA", (n, n), W)
+    shade.putalpha(shadow.filter(ImageFilter.GaussianBlur(11)))
+    shade.save(P("gizmo-shadow"))
+    face = Image.new("RGBA", (n * SS, n * SS), (0, 0, 0, 0))
+    light = Image.new("RGBA", face.size)
+    ld = ImageDraw.Draw(light)
+    for y in range(n * SS):
+        v = int(255 - 14 * y / (n * SS))
+        ld.line([(0, y), (n * SS, y)], fill=(v, v, min(255, v + 3), 255))
+    disc = [_px(c - DISC / 2), _px(c - DISC / 2), _px(c + DISC / 2), _px(c + DISC / 2)]
+    mask = Image.new("L", face.size, 0)
+    ImageDraw.Draw(mask).ellipse(disc, fill=255)
+    face.paste(light, (0, 0), mask)
+    ImageDraw.Draw(face).ellipse(disc, outline=(0, 0, 0, 16), width=SS)
+    face.resize((n, n), Image.LANCZOS).save(P("gizmo"))
 
 
 def build(out):
@@ -340,6 +469,7 @@ def build(out):
 
     empty_icons(P)
     glyphs(P)
+    gizmo(P)
 
     # On the card: an arrow come down to its line.
     img, d = canvas(18, 18)
