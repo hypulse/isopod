@@ -1,10 +1,12 @@
-# Audiobooks: from the home screen, a shelf, a book of chapter files playing and its
-# chapters, a book in one file with chapters inside, and a book's options.
+# Audiobooks: from Books on the home screen, a shelf, a book of chapter files playing and
+# its chapters, a book in one file with chapters inside, and a book's options.
 wait 1500
 key down
 key down
 key down
-shot 01-home.png
+key confirm
+key down
+shot 01-books-menu.png
 key confirm
 wait 3000
 shot 02-audiobooks.png

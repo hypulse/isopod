@@ -76,6 +76,7 @@ STRINGS = {
     "minutes_short": ("{n}분", "{n} min"),
 
     "audiobooks": ("오디오북", "Audiobooks"),
+    "ebooks": ("전자책", "eBooks"),
     "chapters": ("챕터", "Chapters"),
     "from_beginning": ("처음부터 듣기", "Play from Beginning"),
     "no_audiobooks_title": ("오디오북 없음", "No Audiobooks"),

@@ -1,16 +1,23 @@
-# Books: the library and a folder, and a book waiting on the home screen.
+# Books: the menu of eBooks and Audiobooks, the library and a folder, and a book waiting on
+# the home screen.
 wait 1500
 open /books
-shot 01-books.png
+shot 01-menu.png
+key down
+shot 02-menu-audiobooks.png
+key up
 key confirm
-shot 02-folder.png
+wait 600
+shot 03-ebooks.png
+key confirm
+shot 04-folder.png
 key back
 key down
-shot 03-book-selected.png
+shot 05-book-selected.png
 key confirm
 wait 1500
 daemon home
 wait 900
 hold up 12
 key up
-shot 04-open-book.png
+shot 06-open-book.png

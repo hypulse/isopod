@@ -23,11 +23,11 @@ replaces the front end with a small shell built around your music.
   playlist's own folder or from the music folder. A playlist exported on a computer, with
   that computer's paths, finds the songs that sit in the same folders under the same names
   here.
-- **Radio**: stations from [Radio Browser](https://www.radio-browser.info), under Favorites,
-  Popular, Genres, Countries and Search. A list is fetched the first time it is opened and
-  kept on the card with its logos. Opened a week or more later it shows at once as it was,
-  and is fetched again behind that when the network is there. X on a station makes it a
-  favorite.
+- **Radio**, in the Music menu: stations from [Radio Browser](https://www.radio-browser.info),
+  under Favorites, Popular, Genres, Countries and Search. A list is fetched the first time
+  it is opened and kept on the card with its logos. Opened a week or more later it shows at
+  once as it was, and is fetched again behind that when the network is there. X on a
+  station makes it a favorite.
 - **Podcasts** from their own feeds, found by name or among the most listened to in Apple's
   directory, under Subscriptions, Downloads, Popular and Search. A show's episodes are kept
   on the card once fetched and asked for again behind them when they are an hour old; one
@@ -36,10 +36,10 @@ replaces the front end with a small shell built around your music.
   downloaded unless it is asked for. Each episode keeps its place. What is subscribed to is
   `Subscriptions.opml` in the podcasts folder, beside the downloads: the file podcast apps
   export and import.
-- **Audiobooks** from `/storage/audiobooks`: a folder of files, one for each chapter or part
-  (or `CD 1`, `CD 2` folders of them), or one file. An M4B's own chapters are read from it,
-  and a folder of M4Bs is a shelf of books, an author's say. A book starts where it was
-  left, and X lists its chapters or starts it over.
+- **Audiobooks**, in the Books menu beside eBooks, from `/storage/audiobooks`: a folder of
+  files, one for each chapter or part (or `CD 1`, `CD 2` folders of them), or one file. An
+  M4B's own chapters are read from it, and a folder of M4Bs is a shelf of books, an
+  author's say. A book starts where it was left, and X lists its chapters or starts it over.
 - **Lyrics**, all of them, are a press of Y away: timed lyrics follow the line being sung,
   plain ones scroll. They come from an `.lrc` or `.txt` file beside the song and named
   like it (`Song.mp3`, `Song.lrc`), or from the song's own tags.
@@ -50,7 +50,7 @@ replaces the front end with a small shell built around your music.
 - **Videos** from `/storage/videos`, played by mpv: MP4, MKV, AVI, WebM, MOV and the rest.
   Subtitles beside the file (SRT, SMI, ASS, VTT) or inside it turn on by themselves, Korean
   first, and older Korean subtitle files read correctly. It remembers where you stopped.
-- **Books** from `/storage/books`, read in [KOReader](https://koreader.rocks): EPUB, PDF,
+- **eBooks** from `/storage/books`, read in [KOReader](https://koreader.rocks): EPUB, PDF,
   comics and the rest it opens. isoPod lists them, KOReader shows the one you pick with
   isoPod's buttons and a menu cut down to reading, and a book opens again at the page it
   was left on. KOReader's progress sync is kept, for a page shared with another reader

@@ -149,9 +149,7 @@ class Pages:
         t = self.t
         items = [
             item("music", t("music"), preview="art"),
-            item("radio", t("radio"), preview="radio"),
             item("podcasts", t("podcasts"), preview="podcast"),
-            item("audiobooks", t("audiobooks"), preview="audiobook"),
             item("videos", t("videos"), preview="video"),
             item("books", t("books"), preview="book"),
             item("settings", t("settings"), preview="settings"),
@@ -246,6 +244,7 @@ class Pages:
                      item("albums", t("albums"), preview="art"),
                      item("songs", t("songs"), preview="art"),
                      item("genres", t("genres"), preview="genre"),
+                     item("radio", t("radio"), preview="radio"),
                      item("queue", t("up_next"), preview="now"),
                      item("search", t("search"), preview="search")]
             return page(path, t("music"), items, layout="split", art=self._art_pool(path))
@@ -329,7 +328,7 @@ class Pages:
             if key == "search":
                 return {"input": {"title": self.t("search"), "placeholder": self.t("search_music_prompt"),
                                   "token": self._token(self._music_search)}}
-            return {"push": f"/music/{key}"}
+            return {"push": "/radio" if key == "radio" else f"/music/{key}"}
         kind = rest[0]
         if kind == "coverflow":
             (artist, album), _ = m.coverflow_albums()[int(key[3:])]
@@ -963,14 +962,24 @@ class Pages:
             await self.app.launch(self.app.catalog["video"], _strip_ext(key[2:], VIDEO_EXTS), [file])
 
     async def _page_books(self, path, rest):
+        """Books are read or listened to: the ones KOReader opens, and audiobooks."""
+        t = self.t
+        items = [item("ebooks", t("ebooks"), preview="book"),
+                 item("audiobooks", t("audiobooks"), preview="audiobook")]
+        return page(path, t("books"), items, layout="split")
+
+    async def _do_books(self, path, rest, key):
+        return {"push": "/" + key}
+
+    async def _page_ebooks(self, path, rest):
         dirs, files = folder_listing(self._media_dir("books", rest), BOOK_EXTS)
         # A library brought from another KOReader has a folder of notes beside each book.
         items = [item("d:" + d, d) for d in dirs if not d.endswith(".sdr")]
         items += [item("f:" + f, _strip_ext(f, BOOK_EXTS), "none") for f in files]
-        return page(path, rest[-1] if rest else self.t("books"), items,
+        return page(path, rest[-1] if rest else self.t("ebooks"), items,
                     empty=empty("book", self.t("no_books_title"), self.t("no_books_text")))
 
-    async def _do_books(self, path, rest, key):
+    async def _do_ebooks(self, path, rest, key):
         if key.startswith("d:"):
             return {"push": path.rstrip("/") + "/" + enc(key[2:])}
         if key.startswith("f:"):

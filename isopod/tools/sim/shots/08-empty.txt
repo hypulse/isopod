@@ -16,11 +16,9 @@ open /music/queue
 shot 06-up-next.png
 open /videos
 shot 07-videos.png
-open /books
+open /ebooks
 shot 08-books.png
 key home
-key down
-key down
 key down
 key down
 key down

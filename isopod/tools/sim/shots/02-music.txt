@@ -7,61 +7,63 @@ shot 02-menu-playlists.png
 hold down 4
 shot 03-menu-genres.png
 key down
-shot 04-menu-up-next.png
+shot 04-menu-radio.png
 key down
-shot 05-menu-search.png
+shot 05-menu-up-next.png
+key down
+shot 06-menu-search.png
 open /music/coverflow
 wait 900
-shot 06-coverflow.png
+shot 07-coverflow.png
 key right
 key right
 wait 700
-shot 07-coverflow-turned.png
+shot 08-coverflow-turned.png
 key confirm
 wait 1000
-shot 08-coverflow-card.png
+shot 09-coverflow-card.png
 key back
 wait 700
 key home
 open /music/playlists
-shot 09-playlists.png
+shot 10-playlists.png
 key down
 key confirm
-shot 10-playlist.png
+shot 11-playlist.png
 key home
 open /music/artists
-shot 11-artists.png
+shot 12-artists.png
 key right
-shot 12-artists-letter.png
+shot 13-artists-letter.png
 wait 800
 key confirm
-shot 13-artist.png
+shot 14-artist.png
 key confirm
-shot 14-artist-all-songs.png
+shot 15-artist-all-songs.png
 key home
 open /music/albums
-shot 15-albums.png
+shot 16-albums.png
 hold down 6
-shot 16-albums-scrolled.png
+shot 17-albums-scrolled.png
 open /music/album/Aurora Lane/Night Drive
-shot 17-album.png
+shot 18-album.png
 key home
 open /music/songs
-shot 18-songs.png
+shot 19-songs.png
 key pagedown
 key pagedown
-shot 19-songs-two-pages-on.png
+shot 20-songs-two-pages-on.png
 key more
-shot 20-song-options.png
+shot 21-song-options.png
 key back
 key home
 open /music/genres
-shot 21-genres.png
+shot 22-genres.png
 key confirm
-shot 22-genre.png
+shot 23-genre.png
 key home
 open /music/queue
-shot 23-up-next-empty.png
+shot 24-up-next-empty.png
 key home
 open /music/album/Aurora Lane/Night Drive
 key down
@@ -69,35 +71,35 @@ key confirm
 wait 1500
 key home
 open /music/queue
-shot 24-up-next.png
+shot 25-up-next.png
 key home
 open /music/album/Aurora Lane/Night Drive
-shot 25-album-playing.png
+shot 26-album-playing.png
 key home
 open /music
-hold down 7
+hold down 8
 key confirm
 wait 500
-shot 26-search-keyboard.png
+shot 27-search-keyboard.png
 type or
-shot 27-search-typed.png
+shot 28-search-typed.png
 key play
 wait 700
-shot 28-search-results.png
+shot 29-search-results.png
 key back
 key confirm
 type qqq
 key play
 wait 700
-shot 29-search-no-results.png
+shot 30-search-no-results.png
 key home
 open /music/favorites
-shot 30-favorites-empty.png
+shot 31-favorites-empty.png
 key home
 open /music/album/Aurora Lane/Night Drive
 key more
 hold down 2
-shot 31-favorite-option.png
+shot 32-favorite-option.png
 key confirm
 key down
 key down
@@ -105,10 +107,10 @@ key more
 hold down 2
 key confirm
 wait 400
-shot 32-album-favorites.png
+shot 33-album-favorites.png
 key home
 open /music/favorites
-shot 33-favorites.png
+shot 34-favorites.png
 key more
 hold down 2
-shot 34-favorite-on.png
+shot 35-favorite-on.png

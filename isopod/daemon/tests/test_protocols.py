@@ -1381,15 +1381,15 @@ class BooksTest(unittest.IsolatedAsyncioTestCase):
         self.app.music.previous = lambda: step("previous")
 
     async def test_the_list_is_books_and_folders_without_koreaders_notes(self):
-        page = await self.app.pages.build("/books")
+        page = await self.app.pages.build("/ebooks")
         self.assertEqual([(i["key"], i["title"]) for i in page["items"]],
                          [("d:Classics", "Classics"), ("f:A Tale.fb2.zip", "A Tale"), ("f:데미안.epub", "데미안")])
-        inside = await self.app.pages.build("/books/Classics")
+        inside = await self.app.pages.build("/ebooks/Classics")
         self.assertEqual((inside["title"], [i["key"] for i in inside["items"]]), ("Classics", ["f:Emma.epub"]))
 
     async def test_a_book_opens_in_koreader_and_the_one_open_is_picked_up_again(self):
         apps = self.app.apps
-        await self.app.pages.activate("/books", "f:데미안.epub")
+        await self.app.pages.activate("/ebooks", "f:데미안.epub")
         first = apps.running["koreader"]
         self.assertEqual((apps.front, first["title"], first["args"]),
                          ("koreader", "데미안", [os.path.join(self.books, "데미안.epub")]))
@@ -1397,11 +1397,11 @@ class BooksTest(unittest.IsolatedAsyncioTestCase):
         home = await self.app.pages.build("/")
         self.assertEqual([(i["title"], i["preview"]) for i in home["items"] if i.get("key") == "app:koreader"],
                          [("데미안", "book")])
-        await self.app.pages.activate("/books", "f:데미안.epub")
+        await self.app.pages.activate("/ebooks", "f:데미안.epub")
         self.assertIs(apps.running["koreader"], first)
         self.assertEqual(apps.front, "koreader")
         await apps.home()
-        await self.app.pages.activate("/books/Classics", "f:Emma.epub")
+        await self.app.pages.activate("/ebooks/Classics", "f:Emma.epub")
         self.assertEqual(apps.running["koreader"]["args"], [os.path.join(self.books, "Classics", "Emma.epub")])
 
     async def test_home_on_the_home_screen_goes_back_to_the_app_it_was_last_pressed_in(self):
@@ -1411,7 +1411,7 @@ class BooksTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(apps.front, "Home was pressed in no app yet")
         await self.app.launch(self.app.catalog["video"], "film", ["film.mp4"])
         await self.app.key("home")
-        await self.app.pages.activate("/books", "f:데미안.epub")
+        await self.app.pages.activate("/ebooks", "f:데미안.epub")
         await self.app.key("home")
         self.assertEqual((apps.front, sent[-1]), (None, {"event": "present", "do": {"home": True}}))
         await self.app.key("home")
@@ -1424,7 +1424,7 @@ class BooksTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((apps.front, sorted(apps.running)), (None, ["video"]), "that app is closed")
 
     async def test_start_is_the_music_behind_a_book_and_the_rest_is_koreaders(self):
-        await self.app.pages.activate("/books", "f:데미안.epub")
+        await self.app.pages.activate("/ebooks", "f:데미안.epub")
         before = self.app.state.get("volume")["level"]
         for name in ("up", "down", "confirm", "pageup", "pagedown"):
             await self.app.key(name)
@@ -1436,7 +1436,7 @@ class BooksTest(unittest.IsolatedAsyncioTestCase):
         sent = []
         self.app.server.broadcast = lambda msg: msg["event"] == "key" and sent.append(msg)
         await self.app.key("next")
-        await self.app.pages.activate("/books", "f:데미안.epub")
+        await self.app.pages.activate("/ebooks", "f:데미안.epub")
         await self.app.key("previous")
         self.assertEqual((self.skipped, sent), (["next", "previous"], []), "the shell is not asked")
         await self.app.key("home")
@@ -2463,10 +2463,13 @@ class SpokenPagesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([i["title"] for i in page["items"]], ["Subscribe", "Couldn’t Connect"])
         self.assertEqual((await self.pages.build("/podcasts/top"))["empty"]["title"], "Couldn’t Connect")
 
-    async def test_audiobooks_on_the_home_screen(self):
-        home = await self.rows("/", "title")
-        self.assertEqual(home[home.index("Podcasts") + 1], "Audiobooks", "beside Podcasts")
-        self.assertNotIn("Audiobooks", await self.rows("/music", "title"))
+    async def test_audiobooks_under_books_and_the_radio_under_music(self):
+        self.assertEqual(await self.rows("/", "title"), ["Music", "Podcasts", "Videos", "Books", "Settings",
+                                                         "Shuffle Songs"])
+        self.assertEqual(await self.rows("/books", "title"), ["eBooks", "Audiobooks"])
+        self.assertEqual(await self.pages.activate("/books", "audiobooks"), {"push": "/audiobooks"})
+        self.assertIn("Radio", await self.rows("/music", "title"))
+        self.assertEqual(await self.pages.activate("/music", "radio"), {"push": "/radio"})
         self.assertEqual(await self.rows("/audiobooks", "key", "title"), [("b:Book", "Book")])
         self.assertEqual(await self.pages.activate("/audiobooks", "b:Book"), {"nowplaying": True})
         self.assertEqual(self.mpd.queue, ["file://" + os.path.join(self.app.audiobooks.folder, "Book", n)
