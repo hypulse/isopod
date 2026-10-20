@@ -7,6 +7,10 @@ STRINGS = {
     "shuffle_songs": ("노래 셔플", "Shuffle Songs"),
     "now_playing": ("지금 재생 중", "Now Playing"),
     "open_apps": ("열려 있는 앱", "Open Apps"),
+    "apps": ("앱", "Apps"),
+    "no_apps_title": ("앱 없음", "No Apps"),
+    "no_apps_text": ("Apps 폴더에 넣어 주세요.", "Copy apps into the Apps folder."),
+    "app_no_answer": ("{name} 응답 없음", "{name} Didn’t Answer"),
 
     "playlists": ("재생목록", "Playlists"),
     "artists": ("아티스트", "Artists"),

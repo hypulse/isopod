@@ -542,6 +542,7 @@ static const Tone TONES[] = {
     {"playlist", RGB(255, 132, 182), RGB(238, 62, 130), RGB(226, 46, 116)},
     {"genre", RGB(96, 212, 240), RGB(20, 150, 212), RGB(10, 132, 196)},
     {"search", RGB(132, 144, 184), RGB(78, 90, 132), RGB(70, 82, 124)},
+    {"apps", RGB(128, 124, 255), RGB(88, 82, 226), RGB(82, 76, 218)},
 };
 
 #define KB_MS 7000

@@ -82,7 +82,7 @@ class AppSpec:
     setting."""
 
     def __init__(self, key, title_key, argv, needs=None, pauses_music=False, env=None, setup=None,
-                 awake=None, control=None):
+                 awake=None, control=None, cwd=None, keys=None):
         self.key = key
         self.title_key = title_key
         self.argv = argv
@@ -92,6 +92,8 @@ class AppSpec:
         self.setup = setup  # run before each start
         self.awake = awake
         self.control = control  # mpv's JSON IPC socket, to pause it when headphones go
+        self.cwd = cwd
+        self.keys = keys  # buttons pressed as keys, for an app that knows no gamepad
 
     def available(self):
         return self.needs is None or _first_existing(*self.needs) is not None
@@ -232,6 +234,11 @@ class Apps:
         """A video in front that plays. With the lid shut it goes on, as the music does."""
         app = self.running.get(self.front)
         return bool(app and app["media"] and app["playing"] and not app["frozen"])
+
+    @property
+    def front_keys(self):
+        app = self.running.get(self.front)
+        return app["keys"] if app and not app["frozen"] else None
 
     def is_media(self, key):
         app = self.running.get(key)
@@ -379,7 +386,8 @@ class Apps:
             spec.setup()
         app = {"title": title, "unit": unit, "workspace": workspace, "frozen": False, "app_id": app_id,
                "media": spec.pauses_music, "args": list(extra_args), "awake": spec.awake,
-               "control": spec.control, "playing": True, "shown": False, "used_at": time.monotonic()}
+               "control": spec.control, "keys": spec.keys, "playing": True, "shown": False,
+               "used_at": time.monotonic()}
         self.running[spec.key] = app
         if spec.control and not self.sim:
             spawn(self._watch_playback(spec.key, app))
@@ -387,7 +395,8 @@ class Apps:
             log.info("sim: launch %s", argv)
         elif self.runner == "direct":
             try:
-                proc = await asyncio.create_subprocess_exec(*argv, env={**os.environ, **env}, start_new_session=True)
+                proc = await asyncio.create_subprocess_exec(*argv, env={**os.environ, **env}, cwd=spec.cwd,
+                                                            start_new_session=True)
             except OSError as e:
                 log.warning("launch failed: %s", e)
                 self.running.pop(spec.key, None)
@@ -399,6 +408,8 @@ class Apps:
             # Every process gets SIGTERM, so an app can save before it goes.
             cmd = ["systemd-run", f"--unit={unit}", "--collect", "--quiet",
                    "--property=TimeoutStopSec=5", "--property=OOMScoreAdjust=300"]
+            if spec.cwd:
+                cmd.append(f"--working-directory={spec.cwd}")
             cmd += [f"--setenv={k}={v}" for k, v in env.items()]
             code, _, err = await run(*cmd, "--", *argv)
             if code != 0:

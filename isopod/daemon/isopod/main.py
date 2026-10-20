@@ -18,6 +18,7 @@ def parse_args(argv=None):
     p.add_argument("--books", default="/storage/books")
     p.add_argument("--podcasts", default="/storage/podcasts")
     p.add_argument("--audiobooks", default="/storage/audiobooks")
+    p.add_argument("--apps-dir", default="/storage/apps", help="installed apps, a folder each")
     p.add_argument("--data", default="/usr/share/isopod")
     p.add_argument("--mpd", default=os.environ.get("MPD_HOST", "/run/mpd/socket"))
     p.add_argument("--mpd-port", type=int, default=6600)

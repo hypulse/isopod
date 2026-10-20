@@ -8,6 +8,7 @@ from .audio import Audio, FakeAudio, Pactl
 from .audiobooks import Audiobooks
 from .battery import Battery
 from .bluetooth import Bluetooth, FakeBackend, RavelBackend
+from .extras import Extras
 from .i18n import Translator
 from .input import Input
 from .ipc import Server
@@ -77,6 +78,8 @@ class App:
                          runner=runner)
         self.catalog = catalog(args.data, args.books, lambda: self.t.lang, sim=runner == "sim",
                                run_dir=os.path.dirname(args.socket))
+        self.extras = Extras(args.apps_dir, os.path.join(args.config, "apps"), lang=lambda: self.t.lang)
+        self.extras.changed = lambda: self.page_changed("/apps", "/apps/*")
         self.pages = Pages(self)
         self.music.step_station = self.pages.step_station
         self.input = None if self.sim else Input(self)
@@ -96,6 +99,7 @@ class App:
                     await service.start()
             except Exception:
                 log.exception("%s failed to start", name)
+        spawn(self.extras.watch())
         log.info("isoPod %s ready", __version__)
         await asyncio.Event().wait()
 
@@ -148,9 +152,16 @@ class App:
             await self.music.reset_output()
 
     def _update_exclusive(self):
-        """The gamepad belongs to the app in front only while the screen is lit."""
+        """The gamepad belongs to the app in front only while the screen is lit. An app that
+        knows no gamepad gets keys from isoPod instead, and the gamepad stays isoPod's."""
         if self.input:
-            self.input.set_exclusive(self.apps.front is None or not self.power.screen_on)
+            keys = self.apps.front_keys if self.power.screen_on else None
+            self.input.set_keys(keys)
+            self.input.set_exclusive(self.apps.front is None or not self.power.screen_on or bool(keys))
+
+    def typed(self):
+        """A button pressed as a key for the app in front."""
+        self.power.activity()
 
     def foreground_changed(self):
         self._update_exclusive()

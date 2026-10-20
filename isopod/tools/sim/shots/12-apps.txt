@@ -1,0 +1,35 @@
+# Apps: the home row, the apps copied in, a list app's pages and its search, and a window
+# app waiting on the home screen.
+wait 1500
+hold down 5
+shot 01-home-apps.png
+key confirm
+wait 500
+shot 02-apps.png
+key down
+key confirm
+wait 2000
+shot 03-list-app.png
+hold down 2
+key confirm
+wait 800
+shot 04-channel.png
+key back
+hold up 3
+key confirm
+wait 400
+shot 05-search-keyboard.png
+type soup
+key play
+wait 800
+shot 06-search-results.png
+key home
+open /apps
+wait 500
+key confirm
+wait 800
+daemon home
+wait 900
+hold up 12
+key up
+shot 07-open-app.png

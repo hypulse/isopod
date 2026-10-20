@@ -1,0 +1,5 @@
+{
+  "name": {"en": "Example List", "ko": "예제 목록"},
+  "kind": "list",
+  "exec": ["python3", "list.py"]
+}

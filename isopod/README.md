@@ -68,9 +68,16 @@ replaces the front end with a small shell built around your music.
   restart. A headset's own volume buttons count.
 - **Wi-Fi** remembers every network you join.
 - **A cable** to a computer shows the libraries as an MTP device, `Music`, `Videos`, `Books`,
-  `Audiobooks` and `Podcasts`, a second card being the `SD Card` folder in each but the last. What is copied is in the
+  `Audiobooks`, `Podcasts` and `Apps`, a second card being the `SD Card` folder in each of the
+  first four. What is copied is in the
   library as it arrives, and isoPod stays awake for as long as the computer has it. A Mac
   needs an MTP app for this, such as OpenMTP.
+- **Apps**: programs copied into the `Apps` folder, one folder each with an `app.json`, and
+  listed under Apps on the home screen. A window app opens full screen
+  and waits on the home screen as a book does; one that knows only a keyboard gets the
+  buttons as keys. A list app gives isoPod its pages and what to play, and isoPod shows them
+  as its own lists and plays them in its video player. How to make one:
+  [docs/apps.md](docs/apps.md).
 - **Multitasking**: a video or a book keeps its place. Home pauses it where it is, and the
   home screen lists it so you can pick it up again; Home pressed there goes straight back
   to it. Music and a video never sound together: starting one pauses the other.

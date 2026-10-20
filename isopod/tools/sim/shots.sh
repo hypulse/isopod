@@ -10,12 +10,15 @@ WORK=${ISOPOD_SIM_DIR:-/tmp/isopod-sim}
 for TOUR in ${@:-$HERE/shots/*.txt}; do
     NAME=$(basename "$TOUR" .txt)
     DIR=$WORK
+    APPS=$WORK/apps
+    # Only this tour has apps, so the home screen of the others keeps its rows.
+    [ "$NAME" = 12-apps ] && APPS=$HERE/apps
     if [ "$NAME" = 08-empty ]; then
         # A library with nothing in it: run.sh fills only a missing one.
         DIR=$WORK-empty
         mkdir -p "$DIR/music" "$DIR/videos" "$DIR/books" "$DIR/playlists"
     fi
     rm -rf "$DIR/config" "$DIR/cache" "$DIR/mpd.state" "$DIR/music/Favorites.m3u" "$DIR/podcasts" "$OUT/$NAME"
-    ISOPOD_SIM_DIR=$DIR "$HERE/run.sh" "$TOUR" "$OUT/$NAME"
+    ISOPOD_SIM_DIR=$DIR ISOPOD_SIM_APPS=$APPS "$HERE/run.sh" "$TOUR" "$OUT/$NAME"
     python3 "$HERE/sheet.py" "$OUT/$NAME" "$OUT/$NAME.png"
 done

@@ -2048,6 +2048,8 @@ import http.server  # noqa: E402
 import threading  # noqa: E402
 
 from isopod.audiobooks import Audiobooks, mp4_chapters, natural_key  # noqa: E402
+from isopod.extras import Extras  # noqa: E402
+from isopod import input as input_module, uinput  # noqa: E402
 from isopod.music import Spoken  # noqa: E402
 from isopod.podcasts import (Apple, NotListed, Podcasts, PodcastError, fetch, final_address,  # noqa: E402
                              read_opml, write_opml)
@@ -2518,6 +2520,7 @@ class SpokenPagesTest(unittest.IsolatedAsyncioTestCase):
             open(os.path.join(lib, "Book", name), "w").close()
         app.audiobooks = Audiobooks(lib, root, root)
         app.music.identify = lambda uri: app.podcasts.identify(uri) or app.audiobooks.identify(uri)
+        app.extras = Extras(os.path.join(root, "apps"), root)
         self.pages = Pages(app)
         self.show = {"id": "100", "url": "https://x/feed", "title": "Show"}
 
@@ -2582,8 +2585,8 @@ class SpokenPagesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.pages.build("/podcasts/top"))["empty"]["title"], "Couldn’t Connect")
 
     async def test_audiobooks_under_books_and_the_radio_on_the_home_screen(self):
-        self.assertEqual(await self.rows("/", "title"), ["Music", "Radio", "Podcasts", "Videos", "Books", "Settings",
-                                                         "Shuffle Songs"])
+        self.assertEqual(await self.rows("/", "title"), ["Music", "Radio", "Podcasts", "Videos", "Books", "Apps",
+                                                         "Settings", "Shuffle Songs"])
         self.assertEqual(await self.rows("/books", "title"), ["eBooks", "Audiobooks"])
         self.assertEqual(await self.pages.activate("/books", "audiobooks"), {"push": "/audiobooks"})
         self.assertNotIn("Radio", await self.rows("/music", "title"))
@@ -2599,3 +2602,273 @@ class SpokenPagesTest(unittest.IsolatedAsyncioTestCase):
                          [("1", "playing"), ("2", "none")])
         sheet = (await self.pages.alt("/audiobooks", "b:Book"))["sheet"]
         self.assertEqual([o["key"] for o in sheet["items"]], ["chapters", "heard"])
+
+
+PROVIDER = r"""
+import json, sys
+print("starting up")
+sys.stdout.flush()
+for line in sys.stdin:
+    q = json.loads(line)
+    if q["op"] == "page" and q["path"] == "/":
+        a = {"title": "Tube" if q["lang"] == "en" else "튜브", "items": [
+            {"title": "Channels", "header": True},
+            {"title": "Lo-fi Girl", "subtitle": "12 new", "path": "/channel/1"},
+            {"title": "Search", "search": "/search", "prompt": "Videos"},
+            {"title": "A video", "play": "abc"},
+            {"title": "Blocked", "play": "gone"},
+            {"title": "Nothing to press"}]}
+    elif q["op"] == "page":
+        a = {"items": [{"title": q["path"] + "?" + q.get("query", ""), "play": "abc"}]}
+    elif q["play"] == "gone":
+        a = {"error": "Not in your country"}
+    else:
+        a = {"title": "A video, played", "url": "https://v/abc.mp4", "audio": "https://a/abc.m4a",
+             "headers": {"Referer": "https://x/"}}
+    print(json.dumps({"id": q["id"], **a}))
+    sys.stdout.flush()
+"""
+
+
+def make_app(root, name, manifest, files=()):
+    folder = os.path.join(root, name)
+    os.makedirs(folder)
+    with open(os.path.join(folder, "app.json"), "w") as f:
+        f.write(manifest if isinstance(manifest, str) else json.dumps(manifest))
+    for rel, text in files:
+        os.makedirs(os.path.dirname(os.path.join(folder, rel)), exist_ok=True)
+        with open(os.path.join(folder, rel), "w") as f:
+            f.write(text)
+    return folder
+
+
+class InstalledAppsTest(unittest.IsolatedAsyncioTestCase):
+    """Apps copied into /storage/apps: read, listed under Apps, opened, and asked."""
+
+    async def asyncSetUp(self):
+        d = self.dir = tempfile.mkdtemp()
+        self.root = os.path.join(d, "apps")
+        os.makedirs(self.root)
+        self.app = App(parse_args(["--sim", "--socket", os.path.join(d, "s"), "--config", d, "--cache", d,
+                                   "--data", d, "--mpd", os.path.join(d, "mpd"), "--apps-dir", self.root]))
+        self.app.t.lang = "en"
+        self.toasts = []
+        self.app.toast = lambda text, icon=None: self.toasts.append(text)
+        self.addAsyncCleanup(self.app.extras.close)
+
+    def lagrange(self):
+        return make_app(self.root, "lagrange", {
+            "name": "Lagrange", "exec": ["bin/lagrange", "--sw"],
+            "keys": {"a": "enter", "b": "alt+left", "l1": "PageUp", "home": "esc", "x": "hyper"}},
+            [("bin/lagrange", "#!/bin/sh\n"), ("bin/helper", ""), ("lib/libx.so", "")])
+
+    def tube(self):
+        return make_app(self.root, "tube", {"name": {"en": "Tube", "ko": "튜브"}, "kind": "list",
+                                            "exec": [sys.executable, "provider.py"]}, [("provider.py", PROVIDER)])
+
+    async def rows(self, path, *fields):
+        return [tuple(i.get(f) for f in fields) for i in (await self.app.pages.build(path))["items"]]
+
+    def test_an_app_folder_read_and_what_is_left_out(self):
+        self.lagrange()
+        make_app(self.root, "Bad Name", {"name": "x", "exec": ["x"]})
+        make_app(self.root, "broken", "{not json")
+        make_app(self.root, "noexec", {"name": "x"})
+        make_app(self.root, "film", {"name": "x", "exec": ["x"], "kind": "theatre"})
+        make_app(self.root, "listed", {"name": "x", "exec": ["x"], "keys": ["a", "enter"]})
+        apps = self.app.extras.apps()
+        self.assertEqual(sorted(apps), ["lagrange"])
+        m = apps["lagrange"]
+        self.assertEqual((m.kind, m.argv), ("window", [os.path.join(self.root, "lagrange", "bin/lagrange"), "--sw"]))
+        self.assertEqual(m.keys, {"a": [28], "b": [56, 105], "l1": [104]}, "Home and unknown keys are no app's")
+
+    def test_a_copy_over_the_cable_is_made_runnable(self):
+        folder = self.lagrange()
+        spec = self.app.extras.spec(self.app.extras.get("lagrange"))
+        for name in ("lagrange", "helper"):
+            self.assertTrue(os.access(os.path.join(folder, "bin", name), os.X_OK), name)
+        self.assertFalse(os.access(os.path.join(folder, "lib", "libx.so"), os.X_OK))
+        home = os.path.join(self.dir, "apps", "lagrange")
+        self.assertEqual((spec.key, spec.cwd, spec.keys, spec.env["HOME"], spec.env["LD_LIBRARY_PATH"]),
+                         ("app-lagrange", folder, {"a": [28], "b": [56, 105], "l1": [104]}, home,
+                          os.path.join(folder, "lib")))
+        self.assertTrue(os.path.isdir(home))
+        self.assertTrue(spec.env["PATH"].startswith(os.path.join(folder, "bin") + os.pathsep))
+
+    async def test_apps_is_always_on_the_home_screen_before_settings(self):
+        keys = [k for k, in await self.rows("/", "key")]
+        self.assertEqual(keys[keys.index("books") + 1:keys.index("settings")], ["apps"])
+        empty = await self.app.pages.build("/apps")
+        self.assertEqual((empty["title"], empty["items"], empty["empty"]["title"]), ("Apps", [], "No Apps"))
+        self.lagrange()
+        self.tube()
+        self.assertEqual(await self.rows("/apps", "key", "title", "accessory"),
+                         [("a:lagrange", "Lagrange", "none"), ("a:tube", "Tube", "chevron")])
+        self.app.t.lang = "ko"
+        self.assertEqual([t for _, t in await self.rows("/apps", "key", "title")], ["Lagrange", "튜브"])
+
+    async def test_a_window_app_opens_once_and_waits_on_the_home_screen(self):
+        self.lagrange()
+        await self.app.pages.activate("/apps", "a:lagrange")
+        apps = self.app.apps
+        self.assertEqual((apps.front, apps.front_keys), ("app-lagrange", {"a": [28], "b": [56, 105], "l1": [104]}))
+        await apps.home()
+        self.assertIsNone(apps.front_keys)
+        self.assertEqual([(i["title"], i["preview"]) for i in (await self.app.pages.build("/"))["items"]
+                          if i.get("key") == "app:app-lagrange"], [("Lagrange", "apps")])
+        first = apps.running["app-lagrange"]
+        await self.app.pages.activate("/apps", "a:lagrange")
+        self.assertIs(apps.running["app-lagrange"], first, "picked up again, not started anew")
+        self.assertEqual(apps.front, "app-lagrange")
+
+    async def test_the_gamepad_stays_isopods_while_an_app_takes_keys(self):
+        class Pad:
+            keys, exclusive = "unset", None
+
+            def set_keys(self, keys):
+                self.keys = keys
+
+            def set_exclusive(self, on):
+                self.exclusive = on
+        self.lagrange()
+        pad = self.app.input = Pad()
+        await self.app.pages.activate("/apps", "a:lagrange")
+        self.assertEqual((pad.keys["a"], pad.exclusive), ([28], True))
+        self.app.state.data["screen"]["on"] = False
+        self.app._update_exclusive()
+        self.assertEqual((pad.keys, pad.exclusive), (None, True))
+        self.app.state.data["screen"]["on"] = True
+        await self.app.apps.home()
+        self.assertEqual((pad.keys, pad.exclusive), (None, True))
+
+    async def test_a_list_app_s_pages_searches_and_videos(self):
+        self.tube()
+        pages = self.app.pages
+        self.assertEqual(await pages.activate("/apps", "a:tube"), {"push": "/apps/tube"})
+        page = await pages.build("/apps/tube")
+        self.assertEqual((page["title"], page["rows"]), ("Tube", "tall"))
+        self.assertEqual([(i.get("key"), i["title"], i.get("subtitle")) for i in page["items"]], [
+            (None, "Channels", None), ("p:/channel/1", "Lo-fi Girl", "12 new"), ("s:/search", "Search", None),
+            ("v:abc", "A video", None), ("v:gone", "Blocked", None)])
+        push = (await pages.activate("/apps/tube", "p:/channel/1"))["push"]
+        self.assertEqual([t for t, in await self.rows(push, "title")], ["/channel/1?"])
+        ask = (await pages.activate("/apps/tube", "s:/search"))["input"]
+        self.assertEqual((ask["title"], ask["placeholder"]), ("Search", "Videos"))
+        push = (await pages.resolve(ask["token"], " lo/fi "))["push"]
+        found = await pages.build(push)
+        self.assertEqual((found["title"], [i["title"] for i in found["items"]]),
+                         ("Search for “lo/fi”", ["/search?lo/fi"]))
+        await pages.activate("/apps/tube", "v:abc")
+        film = self.app.apps.running["video"]
+        self.assertEqual((film["title"], film["args"]), ("A video, played", [
+            "https://v/abc.mp4", "--ytdl=no", "--force-media-title=A video, played",
+            "--audio-files-append=https://a/abc.m4a", "--http-header-fields-append=Referer: https://x/"]))
+        await pages.activate("/apps/tube", "v:gone")
+        self.assertEqual(self.toasts, ["Not in your country"])
+
+    async def test_a_list_app_that_cannot_answer(self):
+        make_app(self.root, "mute", {"name": "Mute", "kind": "list", "exec": [sys.executable, "-c", "pass"]})
+        page = await self.app.pages.build("/apps/mute")
+        self.assertEqual((page["items"], page["empty"]["title"]), ([], "Mute Didn’t Answer"))
+        self.assertEqual(await self.app.pages.activate("/apps/mute", "v:abc"), {"reload": True})
+
+    async def test_apps_copied_in_are_noticed_and_a_quiet_list_app_stopped(self):
+        changed = []
+        x = self.app.extras
+        x.changed = lambda: changed.append(True)
+        watch = spawn(x.watch(every=0.02))
+        self.addCleanup(watch.cancel)
+        await asyncio.sleep(0.05)
+        self.assertEqual(changed, [])
+        self.tube()
+        await asyncio.sleep(0.1)
+        self.assertEqual(changed, [True])
+        await self.app.pages.build("/apps/tube")
+        provider = x._providers["tube"]
+        self.assertTrue(provider.running)
+        provider.used_at -= 3600
+        await asyncio.sleep(0.1)
+        self.assertNotIn("tube", x._providers)
+        self.assertFalse(provider.running)
+
+
+class AppKeysTest(unittest.TestCase):
+    """Buttons pressed as keys for an app in front that knows no gamepad."""
+
+    class Keyboard:
+        def __init__(self):
+            self.log = []
+
+        def press(self, button, codes):
+            self.log.append(("press", button, codes))
+
+        def release(self, button):
+            self.log.append(("release", button))
+
+        def release_all(self):
+            self.log.append("release all")
+
+    class Router:
+        def __init__(self):
+            self.log = []
+
+        async def key(self, name, repeat):
+            self.log.append(name)
+
+        def key_up(self, name):
+            self.log.append(name + " up")
+
+        def typed(self):
+            self.log.append("typed")
+
+    def test_mapped_buttons_become_keys_and_the_rest_stay_isopods(self):
+        async def go():
+            router, keyboard = self.Router(), self.Keyboard()
+            pad = input_module.Input(router, keyboard=keyboard)
+            pad.set_keys({"a": [28], "x": [29, 38]})
+            pad._key(input_module.BTN_EAST, 1)
+            pad._key(input_module.BTN_EAST, 2)
+            pad._key(input_module.BTN_EAST, 0)
+            pad._key(input_module.BTN_WEST, 1)
+            pad._key(input_module.BTN_MODE, 1)
+            await asyncio.sleep(0)
+            pad.set_keys(None)
+            pad._key(input_module.BTN_WEST, 0)
+            await asyncio.sleep(0)
+            return router.log, keyboard.log
+        router, keyboard = asyncio.run(go())
+        self.assertEqual(keyboard, ["release all", ("press", "a", [28]), ("release", "a"), ("press", "x", [29, 38]),
+                                    "release all"])
+        self.assertEqual(router, ["typed", "typed", "home", "now up"])
+
+    def test_a_combination_is_pressed_in_order_and_let_go_backwards(self):
+        self.assertEqual((uinput.combo("Ctrl+L"), uinput.combo("f12"), uinput.combo("0"), uinput.combo("ctrl+")),
+                         ([29, 38], [88], [11], None))
+        r, w = os.pipe()
+        self.addCleanup(os.close, r)
+        keyboard = uinput.Keyboard()
+        keyboard.fd = w
+        keyboard.press("b", [56, 105])
+        keyboard.release_all()
+        os.close(w)
+        data = os.read(r, 4096)
+        size = struct.calcsize("llHHi")
+        events = [struct.unpack("llHHi", data[i:i + size])[2:] for i in range(0, len(data), size)]
+        self.assertEqual([e for e in events if e[0] == 1], [(1, 56, 1), (1, 105, 1), (1, 105, 0), (1, 56, 0)])
+        self.assertEqual(len(events), 8, "each key followed by a report")
+
+
+class AppsWorkingFolderTest(unittest.IsolatedAsyncioTestCase):
+    async def test_an_app_runs_in_its_own_folder_on_the_device(self):
+        module, ran = sys.modules[Apps.__module__], []
+
+        async def run(*args, **kwargs):
+            ran.append(args)
+            return 0, "active", ""
+        self.addCleanup(setattr, module, "run", module.run)
+        module.run = run
+        apps = Apps(State(lambda snap: None), FakeEvents(), {}, runner="systemd")
+        await apps.launch(AppSpec("app-x", None, ["/apps/x/run"], cwd="/apps/x"), "X")
+        cmd = next(a for a in ran if a[0] == "systemd-run")
+        self.assertIn("--working-directory=/apps/x", cmd)
+        self.assertEqual(cmd[-2:], ("--", "/apps/x/run"))

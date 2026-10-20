@@ -1,0 +1,8 @@
+{
+  "name": "Lagrange",
+  "exec": ["bin/lagrange"],
+  "keys": {
+    "up": "up", "down": "down", "left": "alt+left", "right": "alt+right",
+    "a": "enter", "b": "alt+left", "l1": "pageup", "r1": "pagedown", "x": "ctrl+l"
+  }
+}

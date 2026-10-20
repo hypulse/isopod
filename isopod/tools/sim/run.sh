@@ -43,7 +43,7 @@ pkill -f "isopodd --sim" 2>/dev/null || true
 export PATH="$ROOT/shell:$PATH"  # isopod-thumb, which isopodd runs on station logos
 python3 "$ROOT/daemon/isopodd" --sim --socket "$WORK/isopodd.sock" --config "$WORK/config" \
     --cache "$WORK/cache" --music "$WORK/music" --videos "$WORK/videos" --books "$WORK/books" --data "$WORK/share" \
-    --podcasts "$WORK/podcasts" --audiobooks "$WORK/audiobooks" \
+    --podcasts "$WORK/podcasts" --audiobooks "$WORK/audiobooks" --apps-dir "${ISOPOD_SIM_APPS:-$WORK/apps}" \
     --mpd "$WORK/mpd.sock" >"$WORK/isopodd.log" 2>&1 &
 DAEMON=$!
 

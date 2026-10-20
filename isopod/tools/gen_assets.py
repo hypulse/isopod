@@ -148,6 +148,12 @@ def empty_icons(P):
     glyph("podcast", lambda d: microphone(d, 36, 31, 0.5, 3))
     glyph("audiobook", lambda d: listening_book(d, 18, 17, 0.9, 3.4))
 
+    def apps(d):
+        for x in (25, 36, 47):
+            for y in (25, 36, 47):
+                ellipse(d, x - 4, y - 4, x + 4, y + 4)
+    glyph("apps", apps)
+
 
 
 # The artwork panel beside split menus: a white disc on the section's colour, with the
@@ -293,11 +299,17 @@ def _search(d):
     _g_line(d, [(57, 57), (74, 74)], STROKE + 3.5)
 
 
+def _apps(d):
+    for x in (20, 44, 68):
+        for y in (20, 44, 68):
+            _g_circle(d, x, y, 8.5)
+
+
 def glyphs(P):
     """The sections' glyphs, white, which the shell tints with each section's ink."""
     for name, draw in (("music", _music), ("radio", _radio), ("podcast", _podcast), ("video", _video),
                        ("book", _book), ("audiobook", _audiobook), ("settings", _settings),
-                       ("playlist", _playlist), ("genre", _genre), ("search", _search)):
+                       ("playlist", _playlist), ("genre", _genre), ("search", _search), ("apps", _apps)):
         mask = Image.new("L", (88 * SS, 88 * SS), 0)
         draw(ImageDraw.Draw(mask))
         img = Image.new("RGBA", mask.size, W)

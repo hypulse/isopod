@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 
-from . import evdev, uevents
+from . import evdev, uevents, uinput
 from .util import spawn
 
 log = logging.getLogger("isopod.input")
@@ -32,6 +32,13 @@ MEDIA = {
     KEY_PLAYPAUSE: "toggle", KEY_PLAYCD: "play", KEY_PAUSECD: "pause", KEY_STOPCD: "pause",
     KEY_NEXTSONG: "next", KEY_PREVIOUSSONG: "prev", KEY_FASTFORWARD: "forward", KEY_REWIND: "rewind",
 }
+# The buttons by what is printed on them, for an app's keys. X sends BTN_WEST and Y BTN_NORTH
+# on the RG35XX SP, whatever the device tree calls them. Home is never an app's.
+PRINTED = {
+    BTN_DPAD_UP: "up", BTN_DPAD_DOWN: "down", BTN_DPAD_LEFT: "left", BTN_DPAD_RIGHT: "right",
+    BTN_EAST: "a", BTN_SOUTH: "b", BTN_WEST: "x", BTN_NORTH: "y", BTN_START: "start", BTN_SELECT: "select",
+    BTN_TL: "l1", BTN_TR: "r1", BTN_TL2: "l2", BTN_TR2: "r2",
+}
 VOLUME = {KEY_VOLUMEUP: 1, KEY_VOLUMEDOWN: -1}
 REPEATING = {"up", "down", "left", "right", "pageup", "pagedown"}
 
@@ -56,11 +63,13 @@ def classify(dev):
 class Input:
     """Reads every relevant input node; the router decides who gets each event."""
 
-    def __init__(self, router):
+    def __init__(self, router, keyboard=None):
         self.router = router
         self.devices = {}
         self._repeats = {}
         self.exclusive = True
+        self.keyboard = keyboard or uinput.Keyboard()
+        self.keys = None
 
     def set_exclusive(self, on):
         """While the shell is in front nobody else sees the buttons, so a frozen
@@ -69,6 +78,14 @@ class Input:
         for dev in self.devices.values():
             if "buttons" in dev.roles:
                 dev.grab(on)
+
+    def set_keys(self, keys):
+        """The app in front takes these buttons as keys; None gives every button back."""
+        if keys != self.keys:
+            self.keyboard.release_all()
+            for name in REPEATING:
+                self._stop_repeat(name)
+            self.keys = keys
 
     async def start(self):
         self.scan()
@@ -90,6 +107,9 @@ class Input:
             try:
                 dev = evdev.Device(node)
             except OSError:
+                continue
+            if dev.name == uinput.NAME:
+                dev.close()
                 continue
             roles = classify(dev)
             if not roles:
@@ -131,6 +151,14 @@ class Input:
         if value == 2:
             return
         pressed = value == 1
+        if self.keys and PRINTED.get(code) in self.keys:
+            name = PRINTED[code]
+            if pressed:
+                self.keyboard.press(name, self.keys[name])
+                self.router.typed()
+            else:
+                self.keyboard.release(name)
+            return
         if code in BUTTONS:
             name = BUTTONS[code]
             self._stop_repeat(name)

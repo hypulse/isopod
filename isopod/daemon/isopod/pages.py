@@ -6,6 +6,7 @@ import secrets
 import zlib
 
 from .countries import NAMES as COUNTRIES, country_name
+from .extras import AppError, Refused
 from .podcasts import NotListed, PodcastError
 from .radio import DECADES, GENRES, RadioError
 from .system import human_size
@@ -75,6 +76,7 @@ class Pages:
         self._tokens = {}
         self._art_jobs = set()
         self._lineup = (None, [], 0)
+        self._listed = {}  # a list app's rows by page, for what a press on one means
 
     @property
     def t(self):
@@ -153,6 +155,7 @@ class Pages:
             item("podcasts", t("podcasts"), preview="podcast"),
             item("videos", t("videos"), preview="video"),
             item("books", t("books"), preview="book"),
+            item("apps", t("apps"), preview="apps"),
             item("settings", t("settings"), preview="settings"),
             item("shuffle", t("shuffle_songs"), "none", preview="art"),
         ]
@@ -162,9 +165,12 @@ class Pages:
         apps = self.app.state.get("apps")
         if apps:
             items.append(header(t("open_apps")))
-            items += [item(f"app:{a['key']}", a["title"], "none",
-                           preview="book" if a["key"] == "koreader" else "video") for a in apps]
+            items += [item(f"app:{a['key']}", a["title"], "none", preview=self._app_preview(a["key"])) for a in apps]
         return page("/", "isoPod", items, live=True, layout="split", art=self._art_pool(path))
+
+    @staticmethod
+    def _app_preview(key):
+        return "book" if key == "koreader" else "apps" if key.startswith("app-") else "video"
 
     async def _do_root(self, path, rest, key):
         if key == "shuffle":
@@ -992,6 +998,100 @@ class Pages:
             else:
                 # The book that was open keeps its page as KOReader closes.
                 await self.app.launch(self.app.catalog["koreader"], _strip_ext(key[2:], BOOK_EXTS), [file])
+
+    # apps --------------------------------------------------------------------
+
+    def _app_trouble(self, m, e):
+        return str(e) if isinstance(e, Refused) else self.t("app_no_answer", name=m.title(self.t.lang))
+
+    async def _page_apps(self, path, rest):
+        t = self.t
+        x = self.app.extras
+        if not rest:
+            items = [item("a:" + m.id, m.title(t.lang), "chevron" if m.kind == "list" else "none")
+                     for m in x.sorted()]
+            return page(path, t("apps"), items, empty=empty("apps", t("no_apps_title"), t("no_apps_text")))
+        m = x.get(rest[0])
+        if not m or m.kind != "list":
+            return page(path, "", [], empty=empty(None, t("empty_list")))
+        question = {"op": "page", "path": rest[1] if len(rest) > 1 else "/"}
+        if len(rest) > 2:
+            question["query"] = rest[2]
+        try:
+            answer = await x.ask(m, question)
+        except AppError as e:
+            return page(path, m.title(t.lang), [], empty=empty(None, self._app_trouble(m, e)))
+        items, listed = [], {}
+        for row in answer.get("items") or []:
+            if not isinstance(row, dict):
+                continue
+            title = str(row.get("title", ""))
+            if row.get("header"):
+                items.append(header(title))
+                continue
+            for field, prefix, accessory in (("path", "p:", "chevron"), ("play", "v:", "none"),
+                                             ("search", "s:", "chevron")):
+                if isinstance(row.get(field), str):
+                    listed[prefix + row[field]] = row
+                    items.append(item(prefix + row[field], title, accessory,
+                                      subtitle=str(row["subtitle"]) if row.get("subtitle") else None))
+                    break
+        self._listed.pop(path, None)
+        self._listed[path] = listed
+        while len(self._listed) > 32:
+            self._listed.pop(next(iter(self._listed)))
+        title = answer.get("title") or (t("search_for", q=rest[2]) if len(rest) > 2 else
+                                        m.title(t.lang) if len(rest) == 1 else "")
+        return page(path, str(title), items, rows="tall" if any(i.get("subtitle") for i in items) else None,
+                    empty=empty(None, str(answer.get("empty") or t("empty_list"))))
+
+    async def _do_apps(self, path, rest, key):
+        x = self.app.extras
+        lang = self.t.lang
+        if not rest:
+            m = x.get(key[2:])
+            if not m:
+                return {"reload": True}
+            if m.kind == "list":
+                return {"push": "/apps/" + enc(m.id)}
+            spec = x.spec(m)
+            if spec.key in self.app.apps.running:
+                await self.app.resume_app(spec.key)
+            else:
+                await self.app.launch(spec, m.title(lang))
+            return {"none": True}
+        m = x.get(rest[0])
+        row = self._listed.get(path, {}).get(key)
+        if not m or not row:
+            return {"reload": True}
+        target = key[2:]
+        if key.startswith("p:"):
+            return {"push": "/apps/" + enc(m.id, target)}
+        if key.startswith("s:"):
+            def search(text):
+                text = (text or "").strip()
+                return {"push": "/apps/" + enc(m.id, target, text)} if text else {"none": True}
+            return {"input": {"title": str(row.get("title") or self.t("search")),
+                              "placeholder": str(row.get("prompt") or ""), "token": self._token(search)}}
+        try:
+            answer = await x.ask(m, {"op": "play", "play": target})
+        except AppError as e:
+            self.app.toast(self._app_trouble(m, e))
+            return {"none": True}
+        url = answer.get("url")
+        if not isinstance(url, str) or not url:
+            self.app.toast(self.t("cannot_play"))
+            return {"none": True}
+        # The app has found the stream already; mpv need not ask yt-dlp again.
+        title = str(answer.get("title") or row.get("title") or m.title(lang))
+        args = [url, "--ytdl=no", "--force-media-title=" + title]
+        if isinstance(answer.get("audio"), str):
+            args.append("--audio-files-append=" + answer["audio"])
+        headers = answer.get("headers")
+        for name, value in (headers.items() if isinstance(headers, dict) else ()):
+            args.append(f"--http-header-fields-append={name}: {value}")
+        await self.app.launch(self.app.catalog["video"], title, args)
+        return {"none": True}
 
     # settings ----------------------------------------------------------------
 
