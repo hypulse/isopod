@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026-present isoPod (https://github.com/hypulse/isopod)
+# Copyright (C) 2026-present isoPod (https://github.com/isopod-player/isopod)
 
 PKG_NAME="mpd"
 PKG_VERSION="0.24.13"

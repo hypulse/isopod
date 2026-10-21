@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026-present isoPod (https://github.com/hypulse/isopod)
+# Copyright (C) 2026-present isoPod (https://github.com/isopod-player/isopod)
 
 # Runs after 111-sway-init has rewritten the sway config: add isoPod's window
 # rules, for when sway is started again, and make the shell the UI that autostart

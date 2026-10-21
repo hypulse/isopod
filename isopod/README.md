@@ -159,7 +159,7 @@ The recipes that put these in the image are in `projects/ROCKNIX/packages/isopod
 ## Install on an RG35XX SP
 
 1. Download `isopod-H700-images` from the latest
-   [workflow run](https://github.com/hypulse/isopod/actions/workflows/isopod-h700.yml).
+   [workflow run](https://github.com/isopod-player/isopod/actions/workflows/isopod-h700.yml).
    Pick the `DDR4` image for boards with LPDDR4 memory and the `DDR3` image for the rest.
 2. Write the `.img.gz` to a microSD card with balenaEtcher or Raspberry Pi Imager.
 3. On the card's `ISOPOD` partition, copy `device_trees/sun50i-h700-anbernic-rg35xx-sp.dtb`

@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026-present isoPod (https://github.com/hypulse/isopod)
+# Copyright (C) 2026-present isoPod (https://github.com/isopod-player/isopod)
 
 # Over the cable a computer gets the libraries by MTP. ROCKNIX's usbgadget starts
 # umtprd with /etc/umtprd/umtprd.conf, which lists /storage/roms, so isoPod's covers it,

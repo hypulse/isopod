@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026-present isoPod (https://github.com/hypulse/isopod)
+# Copyright (C) 2026-present isoPod (https://github.com/isopod-player/isopod)
 
 # The UI starts here and the rest of ROCKNIX's boot scripts run behind it. Started after
 # all of them, as ROCKNIX starts its own, it was on the screen some three seconds later.

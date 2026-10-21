@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026-present isoPod (https://github.com/hypulse/isopod)
+# Copyright (C) 2026-present isoPod (https://github.com/isopod-player/isopod)
 
 PKG_NAME="pretendard"
 PKG_VERSION="1.3.9"

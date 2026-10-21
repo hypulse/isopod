@@ -286,5 +286,5 @@ sim {"battery": 19}
 wait 3500
 sim {"battery": 78}
 wait 800
-caption isoPod · github.com/hypulse/isopod
+caption isoPod · github.com/isopod-player/isopod
 wait 3500

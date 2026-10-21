@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Copyright (C) 2026-present isoPod (https://github.com/hypulse/isopod)
+# Copyright (C) 2026-present isoPod (https://github.com/isopod-player/isopod)
 
 PKG_NAME="isopod"
 PKG_VERSION=""
 PKG_LICENSE="GPL-2.0-or-later"
-PKG_SITE="https://github.com/hypulse/isopod"
+PKG_SITE="https://github.com/isopod-player/isopod"
 PKG_URL=""
 PKG_DEPENDS_TARGET="toolchain isopodd isopod-shell mpd pretendard koreader"
 PKG_NEED_UNPACK="${ROOT}/isopod/system"

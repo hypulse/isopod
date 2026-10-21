@@ -8,7 +8,7 @@
   HARDENING_SUPPORT="no"
 
 # The name of the parent organization for updates
-  GIT_ORGANIZATION="hypulse"
+  GIT_ORGANIZATION="isopod-player"
 
 # The name of the github project for updates
   GIT_REPO="isopod"
@@ -23,13 +23,13 @@
   DESCRIPTION="A music-first handheld OS inspired by the iPod."
 
 # Distribution Home URL
-  HOME_URL="https://github.com/hypulse/isopod"
+  HOME_URL="https://github.com/isopod-player/isopod"
 
 # Documentation URL
-  WIKI_URL="https://github.com/hypulse/isopod"
+  WIKI_URL="https://github.com/isopod-player/isopod"
 
 # Where to report bugs
-  BUG_REPORT_URL="https://github.com/hypulse/isopod/issues"
+  BUG_REPORT_URL="https://github.com/isopod-player/isopod/issues"
 
 # Root password to integrate in the target system
   ROOT_PASSWORD="rocknix"
